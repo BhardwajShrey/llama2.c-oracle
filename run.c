@@ -158,6 +158,9 @@ void read_checkpoint(char* checkpoint, Config* config, TransformerWeights* weigh
     *data = mmap(NULL, *file_size, PROT_READ, MAP_PRIVATE, *fd, 0);
     if (*data == MAP_FAILED) { fprintf(stderr, "mmap failed!\n"); exit(EXIT_FAILURE); }
     float* weights_ptr = *data + sizeof(Config)/sizeof(float);
+
+    printf("dim=%d n_layers=%d n_heads=%d n_kv_heads=%d vocab=%d seq_len=%d\n",
+        config->dim, config->n_layers, config->n_heads, config->n_kv_heads, config->vocab_size, config->seq_len);
     memory_map_weights(weights, config, weights_ptr, shared_weights);
 }
 
@@ -175,6 +178,22 @@ void free_transformer(Transformer* t) {
     // free the RunState buffers
     free_run_state(&t->state);
 }
+
+// ----------------------------------------------------------------------------
+// utilities: time
+
+long time_in_ms() {
+    // return time in milliseconds, for benchmarking the model speed
+    struct timespec time;
+    clock_gettime(CLOCK_REALTIME, &time);
+    return time.tv_sec * 1000 + time.tv_nsec / 1000000;
+}
+
+// ----------------------------------------------------------------------------
+// lightweight profiling counters
+
+long forward_ms = 0;     // cumulative milliseconds spent inside forward()
+long matmul_calls = 0;   // number of matmul() invocations
 
 // ----------------------------------------------------------------------------
 // neural net blocks; the dynamics of the Transformer
@@ -217,6 +236,7 @@ void softmax(float* x, int size) {
 void matmul(float* xout, float* x, float* w, int n, int d) {
     // W (d,n) @ x (n,) -> xout (d,)
     // by far the most amount of time is spent inside this little function
+    matmul_calls++;
     int i;
     #pragma omp parallel for private(i)
     for (i = 0; i < d; i++) {
@@ -229,6 +249,7 @@ void matmul(float* xout, float* x, float* w, int n, int d) {
 }
 
 float* forward(Transformer* transformer, int token, int pos) {
+    long forward_start = time_in_ms();
 
     // a few convenience variables
     Config* p = &transformer->config;
@@ -358,6 +379,7 @@ float* forward(Transformer* transformer, int token, int pos) {
 
     // classifier into logits
     matmul(s->logits, x, w->wcls, p->dim, p->vocab_size);
+    forward_ms += time_in_ms() - forward_start;
     return s->logits;
 }
 
@@ -714,16 +736,6 @@ int sample(Sampler* sampler, float* logits) {
 }
 
 // ----------------------------------------------------------------------------
-// utilities: time
-
-long time_in_ms() {
-    // return time in milliseconds, for benchmarking the model speed
-    struct timespec time;
-    clock_gettime(CLOCK_REALTIME, &time);
-    return time.tv_sec * 1000 + time.tv_nsec / 1000000;
-}
-
-// ----------------------------------------------------------------------------
 // generation loop
 
 void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, char *prompt, int steps) {
@@ -963,6 +975,9 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "unknown mode: %s\n", mode);
         error_usage();
     }
+
+    // profiling: total time spent in forward() vs. number of matmul() calls
+    fprintf(stderr, "forward: %ldms total, %ld matmul() calls\n", forward_ms, matmul_calls);
 
     // memory and file handles cleanup
     free_sampler(&sampler);

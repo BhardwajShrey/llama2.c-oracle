@@ -277,6 +277,22 @@ void free_transformer(Transformer* t) {
 }
 
 // ----------------------------------------------------------------------------
+// utilities: time
+
+long time_in_ms() {
+    // return time in milliseconds, for benchmarking the model speed
+    struct timespec time;
+    clock_gettime(CLOCK_REALTIME, &time);
+    return time.tv_sec * 1000 + time.tv_nsec / 1000000;
+}
+
+// ----------------------------------------------------------------------------
+// lightweight profiling counters
+
+long forward_ms = 0;     // cumulative milliseconds spent inside forward()
+long matmul_calls = 0;   // number of matmul() invocations
+
+// ----------------------------------------------------------------------------
 // neural net blocks; the dynamics of the Transformer
 
 void rmsnorm(float* o, float* x, float* weight, int size) {
@@ -318,6 +334,7 @@ void matmul(float* xout, QuantizedTensor *x, QuantizedTensor *w, int n, int d) {
     // W (d,n) @ x (n,) -> xout (d,)
     // by far the most amount of time is spent inside this little function
     // inputs to this function are both quantized
+    matmul_calls++;
 
     int i;
     #pragma omp parallel for private(i)
@@ -342,6 +359,7 @@ void matmul(float* xout, QuantizedTensor *x, QuantizedTensor *w, int n, int d) {
 }
 
 float* forward(Transformer* transformer, int token, int pos) {
+    long forward_start = time_in_ms();
 
     // a few convenience variables
     Config* p = &transformer->config;
@@ -477,6 +495,7 @@ float* forward(Transformer* transformer, int token, int pos) {
     // classifier into logits
     quantize(&s->xq, x, dim);
     matmul(s->logits, &s->xq, w->wcls, dim, p->vocab_size);
+    forward_ms += time_in_ms() - forward_start;
     return s->logits;
 }
 
@@ -833,16 +852,6 @@ int sample(Sampler* sampler, float* logits) {
 }
 
 // ----------------------------------------------------------------------------
-// utilities: time
-
-long time_in_ms() {
-    // return time in milliseconds, for benchmarking the model speed
-    struct timespec time;
-    clock_gettime(CLOCK_REALTIME, &time);
-    return time.tv_sec * 1000 + time.tv_nsec / 1000000;
-}
-
-// ----------------------------------------------------------------------------
 // generation loop
 
 void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, char *prompt, int steps) {
@@ -1082,6 +1091,9 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "unknown mode: %s\n", mode);
         error_usage();
     }
+
+    // profiling: total time spent in forward() vs. number of matmul() calls
+    fprintf(stderr, "forward: %ldms total, %ld matmul() calls\n", forward_ms, matmul_calls);
 
     // memory and file handles cleanup
     free_sampler(&sampler);
