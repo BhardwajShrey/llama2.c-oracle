@@ -6,6 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a personal fork of karpathy/llama2.c, repurposed as a learning project: **building a transformer inference engine from scratch in C++, then optimizing it, to learn low-level performance engineering.** The upstream `run.c`/`runq.c` reference implementation is being instrumented and studied first, before the from-scratch engine is written. The optimization work *is* the point of this project — correctness is table stakes, not the deliverable.
 
+Three project docs track this work and are kept up to date as it progresses: `GLOSSARY.md` (term/weight-matrix reference), `PROGRESS.md` (phase checklist + dated log), and `BENCHMARKS.md` (perf measurement log, see "Benchmark discipline" below).
+
 ## Hard rule: you do not write engine code here
 
 Do **not** write inference engine code, matmul implementations, SIMD intrinsics, quantization code, or attention logic. The user writes all of that themselves — that's the entire point of the project. You may:
