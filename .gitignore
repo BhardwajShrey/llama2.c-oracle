@@ -16,6 +16,9 @@ __pycache__/
 *.exe
 *.o
 
+# from-scratch C++ engine build output (compiled from main.cpp)
+/main
+
 # Model checkpoints and exported weights (large, regenerated via train.py/export.py)
 out/
 *.pt

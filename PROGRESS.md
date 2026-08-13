@@ -1,12 +1,11 @@
 # Progress
 
-Running journal for the llama2.c-from-scratch learning project.
+Running journal for the llama2.c-from-scratch learning project. Also a record of how Shrey repeatedly makes a fool out of himself while doing this.
 
 ## Status
 
-Phase 1 (oracle + comparison tooling) is done; starting Phase 2 next —
-build the C++ skeleton that parses the `.bin` checkpoint header and prints
-the config.
+Phase 2 (C++ skeleton: parses the `.bin` header, prints config) is done;
+Phase 3 (forward pass) is next.
 
 ## Phase checklist
 
@@ -18,10 +17,11 @@ the config.
       (PyTorch reference model, forward hooks, dumps 64 tensors to
       `dumps/`). Built `compare.py` (1e-4 relative tolerance), verified it
       actually catches a deliberate corruption.
-- [ ] **Phase 2 (next) — C++ skeleton.** Parse the `.bin` checkpoint header,
-      print the config.
-- [ ] **Phase 3 — forward pass.** Implement the actual transformer forward
-      pass in the from-scratch C++ engine, validate against the oracle.
+- [x] **Phase 2 — C++ skeleton.** Parse the `.bin` checkpoint header, print
+      the config.
+- [ ] **Phase 3 (next) — forward pass.** Implement the actual transformer
+      forward pass in the from-scratch C++ engine, validate against the
+      oracle.
 - [ ] **Phase 4 — optimization.** SIMD, cache-aware matmul, quantization,
       threading — the actual point of the project. Every change measured
       before/after per `BENCHMARKS.md`.
@@ -31,6 +31,14 @@ the config.
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-08-13 — Phase 2: `main.cpp` skeleton.** Wrote the `Config` struct
+  matching the `.bin` header layout (7 `int32`s: `dim`, `hidden_dim`,
+  `n_layers`, `n_heads`, `n_kv_heads`, `vocab_size`, `seq_len`), opened
+  `stories15M.bin` and `fread`'d the header straight into it, printed every
+  field to confirm it matches the known stories15M config. `vocab_size`
+  prints as negative in the raw header (sign is a flag elsewhere in the
+  original format) — printed with `abs()` for a sane-looking number.
 
 - **2026-08-08 — Phase 1: `compare.py`.** Wrote the comparison script:
   loads a `.npy` (oracle) and a raw float32 dump (C++ side), diffs them,
