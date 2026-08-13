@@ -32,6 +32,16 @@ Phase 3 (forward pass) is next.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-08-13 — Phase 2 follow-up: hardened header parsing.** Switched the
+  `fread` to read `sizeof(Config)` in one call instead of a hardcoded field
+  count of `7`, so the read size stays tied to the struct instead of a
+  magic number that can silently desync from it. Captured `shared_weights`
+  from the sign of `vocab_size` before taking its absolute value, instead
+  of discarding it. Struct blit works because `Config` is 7 `int32`s with
+  no padding; a field-by-field reader is the portable version if the
+  format ever crosses a machine boundary (different `int` size, different
+  endianness, or padding introduced by a future struct change).
+
 - **2026-08-13 — Phase 2: `main.cpp` skeleton.** Wrote the `Config` struct
   matching the `.bin` header layout (7 `int32`s: `dim`, `hidden_dim`,
   `n_layers`, `n_heads`, `n_kv_heads`, `vocab_size`, `seq_len`), opened

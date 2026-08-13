@@ -19,6 +19,10 @@ Do **not** write inference engine code, matmul implementations, SIMD intrinsics,
 
 If asked to implement core engine logic (matmul, SIMD, quantization, attention, etc.), **remind the user of this rule and ask whether they want to override it** rather than just writing it.
 
+## Code review on every commit
+
+Whenever the user commits engine code they wrote themselves (`main.cpp` and any future from-scratch engine files), review `git show HEAD` (or the relevant diff) for bugs, undefined behavior, missing/weak error handling, and non-idiomatic C++ — and explain *why* each one matters, tying it back to this project's own context (the file format, `run.c`'s reference behavior, GLOSSARY.md concepts, etc.) where relevant. **Do not rewrite the code or hand back a corrected version** — point out the issue and let the user fix it themselves, same as the hard rule above. Do this proactively after any commit that touches engine code, not just when asked.
+
 ## Benchmark discipline
 
 Any performance-affecting change must be measured before and after using the protocol documented at the top of `BENCHMARKS.md` (deterministic sampling, fixed token count, exact command + build flags recorded), and the result logged there. A perf change without a logged before/after measurement isn't done.
