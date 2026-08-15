@@ -12,39 +12,7 @@ struct Config {
     int seq_len;     // 256
 };
 
-int main() {
-    std::cout << "Opening file... \n";
-
-    const char* filename = "out/stories15M.bin";
-    FILE* file = std::fopen(filename, "rb");
-
-    if (file == nullptr) {
-        std::perror(filename);
-        return 1;
-    }
-
-    Config config {};
-
-    size_t blocksRead = std::fread(&config, sizeof(Config), 1, file);
-
-    if (blocksRead != 1) {
-        std::cout << "fread for config header failed. Did not return block of size 1\n";
-        std::fclose(file);
-        return 1;
-    }
-
-    bool sharedWeights = config.vocab_size > 0;
-    config.vocab_size = std::abs(config.vocab_size);
-
-    std::cout << "config.dim: "         << config.dim << "\n"
-              << "config.hidden_dim: "  << config.hidden_dim << "\n"
-              << "config.n_layers: "    << config.n_layers << "\n"
-              << "config.n_heads: "     << config.n_heads << "\n"
-              << "config.n_kv_heads: "  << config.n_kv_heads << "\n"
-              << "config.vocab_size: "  << config.vocab_size << "\n"
-              << "config.seq_len: "     << config.seq_len << "\n"
-              << "shared weights: "     << sharedWeights << "\n";
-
+long long expected_file_size(const Config& config) {
     long long floatCount = 0;
 
     // TODO: use static_cast<long long>() instead of (long long) --- C++ style vs C style cast
@@ -60,16 +28,67 @@ int main() {
     floatCount += (long long)config.n_layers * config.dim * config.hidden_dim;  // w3
     floatCount += (long long)config.dim;                                        // final_norm
 
-    long long floatBytesExpected = (floatCount * sizeof(float)) + sizeof(Config);
+    // computed size of weights plus size of header
+    return (floatCount * sizeof(float)) + sizeof(Config);
+}
+
+bool readConfig(FILE* file, Config& config, bool& sharedWeights) {
+    size_t blocksRead = std::fread(&config, sizeof(Config), 1, file);
+
+    if (blocksRead != 1) {
+        std::cerr << "fread for config header failed. blocksRead returned: " << blocksRead << "\n";
+        return false;
+    }
+
+    sharedWeights = config.vocab_size > 0;
+    config.vocab_size = std::abs(config.vocab_size); 
+              
+    return true;
+}
+
+void print_config(const Config& config, bool& sharedWeights) {
+    std::cout << "config.dim: "         << config.dim << "\n"
+              << "config.hidden_dim: "  << config.hidden_dim << "\n"
+              << "config.n_layers: "    << config.n_layers << "\n"
+              << "config.n_heads: "     << config.n_heads << "\n"
+              << "config.n_kv_heads: "  << config.n_kv_heads << "\n"
+              << "config.vocab_size: "  << config.vocab_size << "\n"
+              << "config.seq_len: "     << config.seq_len << "\n"
+              << "shared weights: "     << sharedWeights << "\n";  
+}
+
+int main() {
+    std::cout << "Opening file... \n";
+
+    const char* filename = "out/stories15M.bin";
+    FILE* file = std::fopen(filename, "rb");
+
+    if (file == nullptr) {
+        std::perror(filename);
+        return 1;
+    }
+
+    Config config {};
+    bool sharedWeights {};
+
+    if (!readConfig(file, config, sharedWeights)) {
+        std::cerr << "Unable to read config. Terminating...\n";
+        std::fclose(file);
+        return 1;
+    }
+    
+    print_config(config, sharedWeights); 
+
+    long long fileSizeExpected = expected_file_size(config);
 
     std::fseek(file, 0, SEEK_END);
-    long long floatBytesActual = std::ftell(file);
+    long long fileSizeActual = std::ftell(file);
     std::rewind(file);
 
-    std::cout << "expected: " << floatBytesExpected << "\n";
-    std::cout << "actual:   " << floatBytesActual << "\n";
-    std::cout << "gap:      " << floatBytesActual - floatBytesExpected << " bytes = "
-            << (floatBytesActual - floatBytesExpected) / 4 << " floats\n";
+    std::cout << "expected: " << fileSizeExpected << "\n";
+    std::cout << "actual:   " << fileSizeActual << "\n";
+    std::cout << "gap:      " << fileSizeActual - fileSizeExpected << " bytes = "
+            << (fileSizeActual - fileSizeExpected) / 4 << " floats\n";
 
     
     std::cout << "\nClosing file. \n";
