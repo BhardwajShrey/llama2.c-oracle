@@ -32,6 +32,14 @@ Phase 3 (forward pass) is next.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-08-15 — Phase 2 follow-up: byte-accounting sanity check.** Added
+  a check in `main.cpp` that computes the expected weight-float count from
+  the parsed `Config` (embedding table + all per-layer matrices/norms +
+  final norm) and compares `expected bytes + header size` against the
+  file's actual size (via `fseek`/`ftell`). On `stories15M.bin`: expected
+  60,766,876 bytes, actual 60,816,028 — a 49,152-byte (12,288-float) gap.
+  Not yet explained — see Open questions.
+
 - **2026-08-13 — Phase 2 follow-up: hardened header parsing.** Switched the
   `fread` to read `sizeof(Config)` in one call instead of a hardcoded field
   count of `7`, so the read size stays tied to the struct instead of a
@@ -79,6 +87,11 @@ Phase 3 (forward pass) is next.
   670 tok/s × 60.8 MB (checkpoint size) ≈ 40 GB/s of weight traffic — needs
   to be measured against this machine's actual peak memory bandwidth before
   assuming there's compute headroom left to optimize.
+- `stories15M.bin` is 12,288 floats (49,152 bytes) larger than
+  `header + all layer weights + final norm` accounts for. What else does
+  the `.bin` layout hold beyond what's in `Config` and the per-layer
+  matrices? Check what `run.c`'s `memory_map_weights` maps that this byte
+  count doesn't yet.
 
 ## Gotchas hit
 

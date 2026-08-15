@@ -1,6 +1,5 @@
 #include <iostream>
 #include <cstdio>
-#include <vector>
 #include <cstdlib>
 
 struct Config {
@@ -29,7 +28,7 @@ int main() {
     size_t blocksRead = std::fread(&config, sizeof(Config), 1, file);
 
     if (blocksRead != 1) {
-        std::cout << "fread for config header failed. Did not return header size of 7\n";
+        std::cout << "fread for config header failed. Did not return block of size 1\n";
         std::fclose(file);
         return 1;
     }
@@ -44,7 +43,34 @@ int main() {
               << "config.n_kv_heads: "  << config.n_kv_heads << "\n"
               << "config.vocab_size: "  << config.vocab_size << "\n"
               << "config.seq_len: "     << config.seq_len << "\n"
-              << "shared weights: "     << sharedWeights;
+              << "shared weights: "     << sharedWeights << "\n";
+
+    long long floatCount = 0;
+
+    // TODO: use static_cast<long long>() instead of (long long) --- C++ style vs C style cast
+    floatCount += (long long)config.vocab_size * config.dim;                    // tok_embeddings
+    floatCount += (long long)config.n_layers * config.dim;                      // att_norm
+    floatCount += (long long)config.n_layers * config.dim * config.dim;         // wq
+    floatCount += (long long)config.n_layers * config.dim * config.dim;         // wk 
+    floatCount += (long long)config.n_layers * config.dim * config.dim;         // wv
+    floatCount += (long long)config.n_layers * config.dim * config.dim;         // wo
+    floatCount += (long long)config.n_layers * config.dim;                      // ffn_norm
+    floatCount += (long long)config.n_layers * config.dim * config.hidden_dim;  // w1
+    floatCount += (long long)config.n_layers * config.dim * config.hidden_dim;  // w2
+    floatCount += (long long)config.n_layers * config.dim * config.hidden_dim;  // w3
+    floatCount += (long long)config.dim;                                        // final_norm
+
+    long long floatBytesExpected = (floatCount * sizeof(float)) + sizeof(Config);
+
+    std::fseek(file, 0, SEEK_END);
+    long long floatBytesActual = std::ftell(file);
+    std::rewind(file);
+
+    std::cout << "expected: " << floatBytesExpected << "\n";
+    std::cout << "actual:   " << floatBytesActual << "\n";
+    std::cout << "gap:      " << floatBytesActual - floatBytesExpected << " bytes = "
+            << (floatBytesActual - floatBytesExpected) / 4 << " floats\n";
+
     
     std::cout << "\nClosing file. \n";
     std::fclose(file);
