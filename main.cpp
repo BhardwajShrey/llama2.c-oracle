@@ -16,6 +16,21 @@ struct Config {
     int seq_len;     // 256
 };
 
+struct Weights {
+    float* tok_embeddings;
+    float* att_norm;
+    float* wq;
+    float* wk;
+    float* wv;
+    float* wo;
+    float* ffn_norm;
+    float* w1;
+    float* w2;
+    float* w3;
+    float* final_norm;
+    float* output;
+};
+
 long long expected_file_size(const Config& config) {
     long long floatCount = 0;
 
@@ -66,6 +81,7 @@ int main() {
 
     struct stat st;
     if (fstat(fd, &st) != 0) {
+        close(fd);
         std::cerr << "Error running fstat on: " << filename << ", with fd: " << fd << "\n";
         return 1;
     }
@@ -92,6 +108,8 @@ int main() {
     std::cout << "actual:   " << fileSizeActual << "\n";
     std::cout << "gap:      " << fileSizeActual - fileSizeExpected << " bytes = "
             << (fileSizeActual - fileSizeExpected) / 4 << " floats\n";
+
+    munmap(data, st.st_size);
 
     return 0;
 }

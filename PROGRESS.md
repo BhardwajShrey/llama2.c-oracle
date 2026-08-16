@@ -32,6 +32,14 @@ Phase 3 (forward pass) is next.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-08-16 — Phase 2 follow-up: fd/mmap cleanup + `Weights` struct
+  scaffold.** Fixed the `fd` leak on a failed `fstat` (now `close(fd)`
+  before returning) and added the missing `munmap(data, st.st_size)` on
+  the successful exit path. Also declared a `Weights` struct (pointers for
+  `tok_embeddings`, `att_norm`, `wq`/`wk`/`wv`/`wo`, `ffn_norm`,
+  `w1`/`w2`/`w3`, `final_norm`, `output`) — not wired up to the mapped
+  data yet, just the shape for the next step.
+
 - **2026-08-16 — Phase 2 follow-up: switched header read from `fread` to
   `mmap`.** `main.cpp` now `open()`s the checkpoint, `fstat()`s it for
   size, and `mmap()`s the whole file read-only instead of using
