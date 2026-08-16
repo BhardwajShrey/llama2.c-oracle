@@ -1,6 +1,10 @@
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 struct Config {
     int dim;         // 288  - the width of x
@@ -32,18 +36,12 @@ long long expected_file_size(const Config& config) {
     return (floatCount * sizeof(float)) + sizeof(Config);
 }
 
-bool readConfig(FILE* file, Config& config, bool& sharedWeights) {
-    size_t blocksRead = std::fread(&config, sizeof(Config), 1, file);
-
-    if (blocksRead != 1) {
-        std::cerr << "fread for config header failed. blocksRead returned: " << blocksRead << "\n";
-        return false;
-    }
+void readConfig(void* data, Config& config, bool& sharedWeights) {
+    const Config* cfg_ptr = reinterpret_cast<const Config*>(data);
+    config = *cfg_ptr;
 
     sharedWeights = config.vocab_size > 0;
     config.vocab_size = std::abs(config.vocab_size); 
-              
-    return true;
 }
 
 void print_config(const Config& config, bool& sharedWeights) {
@@ -58,41 +56,42 @@ void print_config(const Config& config, bool& sharedWeights) {
 }
 
 int main() {
-    std::cout << "Opening file... \n";
-
     const char* filename = "out/stories15M.bin";
-    FILE* file = std::fopen(filename, "rb");
 
-    if (file == nullptr) {
+    int fd = open(filename, O_RDONLY);
+    if (fd == -1) {
         std::perror(filename);
+        return 1;
+    }
+
+    struct stat st;
+    if (fstat(fd, &st) != 0) {
+        std::cerr << "Error running fstat on: " << filename << ", with fd: " << fd << "\n";
+        return 1;
+    }
+
+    void* data = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    close(fd);
+    if (data == MAP_FAILED) {
+        std::cerr << "mmap on filename: " << filename << ", failed.\n";
         return 1;
     }
 
     Config config {};
     bool sharedWeights {};
 
-    if (!readConfig(file, config, sharedWeights)) {
-        std::cerr << "Unable to read config. Terminating...\n";
-        std::fclose(file);
-        return 1;
-    }
+    readConfig(data, config, sharedWeights);
     
     print_config(config, sharedWeights); 
 
     long long fileSizeExpected = expected_file_size(config);
 
-    std::fseek(file, 0, SEEK_END);
-    long long fileSizeActual = std::ftell(file);
-    std::rewind(file);
+    long long fileSizeActual = st.st_size;
 
     std::cout << "expected: " << fileSizeExpected << "\n";
     std::cout << "actual:   " << fileSizeActual << "\n";
     std::cout << "gap:      " << fileSizeActual - fileSizeExpected << " bytes = "
             << (fileSizeActual - fileSizeExpected) / 4 << " floats\n";
 
-    
-    std::cout << "\nClosing file. \n";
-    std::fclose(file);
-    
     return 0;
 }

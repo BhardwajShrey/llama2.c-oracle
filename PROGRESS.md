@@ -32,6 +32,14 @@ Phase 3 (forward pass) is next.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-08-16 — Phase 2 follow-up: switched header read from `fread` to
+  `mmap`.** `main.cpp` now `open()`s the checkpoint, `fstat()`s it for
+  size, and `mmap()`s the whole file read-only instead of using
+  `FILE*`/`fread`, matching `run.c`'s approach (which mmaps everything
+  past the header). `readConfig` now takes the mapped pointer and copies
+  the header out via a cast instead of a stream read. Output on
+  `stories15M.bin` unchanged from the `fread` version.
+
 - **2026-08-15 — Phase 2 follow-up: byte-accounting sanity check.** Added
   a check in `main.cpp` that computes the expected weight-float count from
   the parsed `Config` (embedding table + all per-layer matrices/norms +
