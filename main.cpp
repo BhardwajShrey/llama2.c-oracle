@@ -31,6 +31,14 @@ struct Weights {
     float* output;
 };
 
+void printFirstN(const char* msg, float* arr, int n = 5) {
+    std::cout << msg << ": ";
+    for (int i = 0; i < n; i++) {
+        std::cout << arr[i] << " ";
+    }
+    std::cout << "\n";
+}
+
 long long expected_file_size(const Config& config) {
     long long floatCount = 0;
 
@@ -48,6 +56,7 @@ long long expected_file_size(const Config& config) {
     floatCount += (long long)config.dim;                                        // final_norm
 
     // computed size of weights plus size of header
+    std::cout << "floatCount processed: " << floatCount << "\n";
     return (floatCount * sizeof(float)) + sizeof(Config);
 }
 
@@ -108,6 +117,33 @@ int main() {
     std::cout << "actual:   " << fileSizeActual << "\n";
     std::cout << "gap:      " << fileSizeActual - fileSizeExpected << " bytes = "
             << (fileSizeActual - fileSizeExpected) / 4 << " floats\n";
+
+    Weights w {};
+    // skip header. that's where floats begin
+    float* p = reinterpret_cast<float*>(static_cast<char*>(data) + sizeof(Config));
+    w.tok_embeddings    = p; p += (long long)config.vocab_size * config.dim;                    // tok_embeddings
+    w.att_norm          = p; p += (long long)config.n_layers * config.dim;                      // att_norm
+    w.wq                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wq
+    w.wk                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wk 
+    w.wv                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wv
+    w.wo                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wo
+    w.ffn_norm          = p; p += (long long)config.n_layers * config.dim;                      // ffn_norm
+    w.w1                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;  // w1
+    w.w2                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;  // w2
+    w.w3                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;  // w3
+    w.final_norm        = p; p += (long long)config.dim;                                        // final_norm
+
+    if (sharedWeights) {
+        w.output = w.tok_embeddings;
+    } else {
+        w.output = (p + (long long)config.seq_len * (config.dim / config.n_heads));
+    }
+
+    long long advanced = p - reinterpret_cast<float*>(static_cast<char*>(data) + sizeof(Config));
+    std::cout << "advanced: " << advanced << " floats\n";
+
+    printFirstN("tok_embeddings", w.tok_embeddings);
+    printFirstN("wq", w.wq);
 
     munmap(data, st.st_size);
 

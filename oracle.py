@@ -50,3 +50,7 @@ with torch.no_grad():
 
 np.save("dumps/logits.npy", logits.detach().cpu().numpy())
 print("dumped", len(os.listdir("dumps")), "tensors")
+
+# print(model.tok_embeddings.weight[0][:5])
+
+# print(model.layers[0].attention.wq.weight.flatten()[:5])

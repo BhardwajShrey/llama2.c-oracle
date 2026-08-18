@@ -32,6 +32,16 @@ Phase 3 (forward pass) is next.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-08-19 — Phase 2 follow-up: wired up `Weights` pointers.** Walked
+  a `float*` through the mapped region (right after the header) and
+  assigned each `Weights` field an offset, in file order:
+  `tok_embeddings → att_norm → wq → wk → wv → wo → ffn_norm → w1 → w2 → w3
+  → final_norm`, then `output` (== `tok_embeddings` if `sharedWeights`,
+  otherwise offset past two RoPE frequency tables that this loader doesn't
+  keep pointers to). This closes out the byte-gap open question below.
+  Added a `printFirstN` helper and spot-checked the first 5 floats of
+  `tok_embeddings` and `wq`.
+
 - **2026-08-16 — Phase 2 follow-up: fd/mmap cleanup + `Weights` struct
   scaffold.** Fixed the `fd` leak on a failed `fstat` (now `close(fd)`
   before returning) and added the missing `munmap(data, st.st_size)` on
@@ -103,11 +113,14 @@ Phase 3 (forward pass) is next.
   670 tok/s × 60.8 MB (checkpoint size) ≈ 40 GB/s of weight traffic — needs
   to be measured against this machine's actual peak memory bandwidth before
   assuming there's compute headroom left to optimize.
-- `stories15M.bin` is 12,288 floats (49,152 bytes) larger than
-  `header + all layer weights + final norm` accounts for. What else does
-  the `.bin` layout hold beyond what's in `Config` and the per-layer
-  matrices? Check what `run.c`'s `memory_map_weights` maps that this byte
-  count doesn't yet.
+- ~~`stories15M.bin` is 12,288 floats (49,152 bytes) larger than
+  `header + all layer weights + final norm` accounts for.~~ **Resolved
+  2026-08-19:** it's two RoPE frequency tables (`seq_len × head_size/2`
+  each, for the real/imaginary rotation components) that `run.c` maps but
+  then never uses past computing an offset — this engine will compute RoPE
+  angles directly instead of reading a cached table, so the classifier
+  offset just skips past both (`seq_len * head_size` combined) without
+  keeping pointers to them.
 
 ## Gotchas hit
 
