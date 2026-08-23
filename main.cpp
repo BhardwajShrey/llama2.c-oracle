@@ -79,6 +79,31 @@ void print_config(const Config& config, bool& sharedWeights) {
               << "shared weights: "     << sharedWeights << "\n";  
 }
 
+void initWeights(const Config& config, Weights& w, void* data, bool sharedWeights) {
+    // skip header. that's where floats begin
+    float* p = reinterpret_cast<float*>(static_cast<char*>(data) + sizeof(Config));
+    w.tok_embeddings    = p; p += (long long)config.vocab_size * config.dim;                    // tok_embeddings
+    w.att_norm          = p; p += (long long)config.n_layers * config.dim;                      // att_norm
+    w.wq                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wq
+    w.wk                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wk 
+    w.wv                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wv
+    w.wo                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wo
+    w.ffn_norm          = p; p += (long long)config.n_layers * config.dim;                      // ffn_norm
+    w.w1                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;  // w1
+    w.w2                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;  // w2
+    w.w3                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;  // w3
+    w.final_norm        = p; p += (long long)config.dim;                                        // final_norm
+
+    if (sharedWeights) {
+        w.output = w.tok_embeddings;
+    } else {
+        w.output = (p + (long long)config.seq_len * (config.dim / config.n_heads));
+    }
+
+    long long advanced = p - reinterpret_cast<float*>(static_cast<char*>(data) + sizeof(Config));
+    std::cout << "advanced: " << advanced << " floats\n";
+}
+
 int main() {
     const char* filename = "out/stories15M.bin";
 
@@ -119,28 +144,8 @@ int main() {
             << (fileSizeActual - fileSizeExpected) / 4 << " floats\n";
 
     Weights w {};
-    // skip header. that's where floats begin
-    float* p = reinterpret_cast<float*>(static_cast<char*>(data) + sizeof(Config));
-    w.tok_embeddings    = p; p += (long long)config.vocab_size * config.dim;                    // tok_embeddings
-    w.att_norm          = p; p += (long long)config.n_layers * config.dim;                      // att_norm
-    w.wq                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wq
-    w.wk                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wk 
-    w.wv                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wv
-    w.wo                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wo
-    w.ffn_norm          = p; p += (long long)config.n_layers * config.dim;                      // ffn_norm
-    w.w1                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;  // w1
-    w.w2                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;  // w2
-    w.w3                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;  // w3
-    w.final_norm        = p; p += (long long)config.dim;                                        // final_norm
 
-    if (sharedWeights) {
-        w.output = w.tok_embeddings;
-    } else {
-        w.output = (p + (long long)config.seq_len * (config.dim / config.n_heads));
-    }
-
-    long long advanced = p - reinterpret_cast<float*>(static_cast<char*>(data) + sizeof(Config));
-    std::cout << "advanced: " << advanced << " floats\n";
+    initWeights(config, w, data, sharedWeights);
 
     printFirstN("tok_embeddings", w.tok_embeddings);
     printFirstN("wq", w.wq);
