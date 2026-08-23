@@ -100,8 +100,20 @@ void initWeights(const Config& config, Weights& w, void* data, bool sharedWeight
         w.output = (p + (long long)config.seq_len * (config.dim / config.n_heads));
     }
 
-    long long advanced = p - reinterpret_cast<float*>(static_cast<char*>(data) + sizeof(Config));
-    std::cout << "advanced: " << advanced << " floats\n";
+    // long long advanced = p - reinterpret_cast<float*>(static_cast<char*>(data) + sizeof(Config));
+    // std::cout << "advanced: " << advanced << " floats\n";
+}
+
+void getTokenFloats(const Weights& w, std::vector<float>& x, int tokId) {
+    // x.size() equals config.dim. x is the right size, but the semantics should come from config
+    // TODO: Add a check for whether the token id is out of range. Decide what behaviour must come
+    long long xSize = static_cast<long long>(x.size());
+    float* startP = w.tok_embeddings + (tokId * xSize);
+    std::copy(startP, startP + xSize, x.data());
+}
+
+void dumpFloats(const char* path, const float* arr, long long count) {
+    // TODO
 }
 
 int main() {
@@ -147,8 +159,11 @@ int main() {
 
     initWeights(config, w, data, sharedWeights);
 
-    printFirstN("tok_embeddings", w.tok_embeddings);
-    printFirstN("wq", w.wq);
+    // printFirstN("tok_embeddings", w.tok_embeddings);
+    // printFirstN("wq", w.wq);
+
+    std::vector<float> x(config.dim);
+    getTokenFloats(w, x, 5);
 
     munmap(data, st.st_size);
 

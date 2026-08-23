@@ -32,6 +32,18 @@ Phase 3 (forward pass) is next.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-08-23 — Phase 2 → 3 bridge: token embedding lookup.** Added
+  `getTokenFloats`, which copies one token's row out of
+  `w.tok_embeddings` (`dim` floats starting at `tokId * dim`) into a
+  caller-provided `std::vector<float>`. This is the first read of the
+  actual weight data by index rather than just walking pointers past it —
+  the next real step of the forward pass (`x = tok_embeddings[token_id]`)
+  now has a concrete function to build on. Also stubbed `dumpFloats` (not
+  yet implemented — for writing intermediate activations to `dumps/` to
+  diff against `oracle.py`'s output later) and commented out the earlier
+  `advanced`/`printFirstN` debug prints now that the pointer math is
+  trusted.
+
 - **2026-08-19 — Phase 2 follow-up: wired up `Weights` pointers.** Walked
   a `float*` through the mapped region (right after the header) and
   assigned each `Weights` field an offset, in file order:
