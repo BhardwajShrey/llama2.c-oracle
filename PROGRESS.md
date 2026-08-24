@@ -32,6 +32,17 @@ Phase 3 (forward pass) is next.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-08-24 — Phase 2 → 3 bridge: implemented `dumpFloats`, first
+  real oracle comparison.** `dumpFloats` now writes a raw float32 array to
+  disk (`fopen`/`fwrite`/`fclose`, checked for a short write), replacing
+  the earlier stub. Wired it into `main`: looks up token id `1`'s
+  embedding row and dumps it to `mine/embeddings.bin`. This is the first
+  C++-side output that's actually in the format `compare.py` expects —
+  next step is running `compare.py dumps/tok_embeddings.npy
+  mine/embeddings.bin` (once `oracle.py` dumps a per-token embedding, not
+  just full-sequence tensors) to confirm the lookup matches PyTorch.
+  `mine/` added to `.gitignore` as the output directory for these dumps.
+
 - **2026-08-23 — Phase 2 → 3 bridge: token embedding lookup.** Added
   `getTokenFloats`, which copies one token's row out of
   `w.tok_embeddings` (`dim` floats starting at `tokId * dim`) into a

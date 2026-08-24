@@ -6,6 +6,8 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+const char* filename = "out/stories15M.bin";
+
 struct Config {
     int dim;         // 288  - the width of x
     int hidden_dim;  // 768  - FFN internal width
@@ -112,13 +114,32 @@ void getTokenFloats(const Weights& w, std::vector<float>& x, int tokId) {
     std::copy(startP, startP + xSize, x.data());
 }
 
-void dumpFloats(const char* path, const float* arr, long long count) {
-    // TODO
+bool dumpFloats(const char* path, const float* arr, long long count) {
+    if (count <= 0) {
+        std::cerr << "count is equal to or less than zero.\n";
+        return false;
+    }
+
+    std::FILE* file = std::fopen(path, "wb");
+    if (file == nullptr) {
+        std::perror(path);
+        return false;
+    }
+
+    size_t elemsWritten = std::fwrite(arr, sizeof(float), static_cast<size_t>(count), file);
+
+    if (elemsWritten != count) {
+        std::cerr << "Expected elemsWritten: " << count << ". Actual: " << elemsWritten << "\n";
+        std::fclose(file);
+        return false;
+    }
+
+    std::fclose(file);
+
+    return true;
 }
 
 int main() {
-    const char* filename = "out/stories15M.bin";
-
     int fd = open(filename, O_RDONLY);
     if (fd == -1) {
         std::perror(filename);
@@ -163,7 +184,10 @@ int main() {
     // printFirstN("wq", w.wq);
 
     std::vector<float> x(config.dim);
-    getTokenFloats(w, x, 5);
+    getTokenFloats(w, x, 1);
+    if (dumpFloats("mine/embeddings.bin", x.data(), config.dim) == false) {
+        std::cerr << "failed to dump data to mine/embeddings.bin";
+    }
 
     munmap(data, st.st_size);
 

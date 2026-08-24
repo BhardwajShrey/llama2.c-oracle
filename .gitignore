@@ -36,3 +36,6 @@ dumps/
 
 # wandb logging
 wandb/
+
+# my outputs to be checked against the oracle
+mine/
