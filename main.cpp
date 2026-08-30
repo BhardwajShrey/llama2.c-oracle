@@ -106,7 +106,7 @@ void initWeights(const Config& config, Weights& w, void* data, bool sharedWeight
     // std::cout << "advanced: " << advanced << " floats\n";
 }
 
-void getTokenFloats(const Weights& w, std::vector<float>& x, int tokId) {
+void getTokEmbedding(const Weights& w, std::vector<float>& x, int tokId) {
     // x.size() equals config.dim. x is the right size, but the semantics should come from config
     // TODO: Add a check for whether the token id is out of range. Decide what behaviour must come
     long long xSize = static_cast<long long>(x.size());
@@ -184,7 +184,7 @@ int main() {
     // printFirstN("wq", w.wq);
 
     std::vector<float> x(config.dim);
-    getTokenFloats(w, x, 1);
+    getTokEmbedding(w, x, 1);
     if (dumpFloats("mine/embeddings.bin", x.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/embeddings.bin";
     }
