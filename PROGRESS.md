@@ -5,7 +5,8 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 ## Status
 
 Phase 2 (C++ skeleton: parses the `.bin` header, prints config) is done;
-Phase 3 (forward pass) is next.
+Phase 3 (forward pass) is in progress — RMSNorm on the token embedding is
+implemented, attention is next.
 
 ## Phase checklist
 
@@ -19,9 +20,10 @@ Phase 3 (forward pass) is next.
       actually catches a deliberate corruption.
 - [x] **Phase 2 — C++ skeleton.** Parse the `.bin` checkpoint header, print
       the config.
-- [ ] **Phase 3 (next) — forward pass.** Implement the actual transformer
-      forward pass in the from-scratch C++ engine, validate against the
-      oracle.
+- [ ] **Phase 3 (in progress) — forward pass.** Implement the actual
+      transformer forward pass in the from-scratch C++ engine, validate
+      against the oracle. RMSNorm on the embedding done; attention,
+      SwiGLU FFN, and the layer loop remain.
 - [ ] **Phase 4 — optimization.** SIMD, cache-aware matmul, quantization,
       threading — the actual point of the project. Every change measured
       before/after per `BENCHMARKS.md`.
@@ -31,6 +33,18 @@ Phase 3 (forward pass) is next.
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-04 — Phase 3: RMSNorm.** Implemented `rmsNorm` (sum of
+  squares over `dim` → divide by `dim` → add `eps` → reciprocal square
+  root → scale each element by that and by the corresponding norm
+  weight), matching `run.c`'s `rmsnorm()` formula and its hardcoded
+  `1e-5f` epsilon (not stored in `Config` — same in both the reference
+  C and `model.py`). Applied it to the token-1 embedding using
+  `w.att_norm` (layer 0's slice) and dumped the result to
+  `mine/att_norm.bin` for comparison against `oracle.py`'s
+  `layers.0.attention_norm.npy`. This is the first actual forward-pass
+  computation in the from-scratch engine — everything before this was
+  header parsing and pointer setup.
 
 - **2026-08-24 — Phase 2 → 3 bridge: implemented `dumpFloats`, first
   real oracle comparison.** `dumpFloats` now writes a raw float32 array to

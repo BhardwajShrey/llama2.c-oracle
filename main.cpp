@@ -139,6 +139,24 @@ bool dumpFloats(const char* path, const float* arr, long long count) {
     return true;
 }
 
+// x = input, g = w.att_norm (6 layers of 288 floats of weight), eps = 1e-5 (guards against divide by zero)
+void rmsNorm(std::vector<float>& x, float* g, float eps, const int dim, std::vector<float>& out) {
+    float sumSquares {0};
+
+    for (int i = 0; i < dim; i++) {
+        sumSquares += x[i] * x[i];
+    }
+
+    float mean {sumSquares / static_cast<float>(dim)};
+    mean = mean + eps;
+    
+    float scale = {1.0f / sqrtf(mean)};     // reciprocal square root
+
+    for (int i = 0; i < dim; i++) {
+        out[i] = (x[i] * scale * g[i]);
+    }
+}
+
 int main() {
     int fd = open(filename, O_RDONLY);
     if (fd == -1) {
@@ -185,8 +203,16 @@ int main() {
 
     std::vector<float> x(config.dim);
     getTokEmbedding(w, x, 1);
+
     if (dumpFloats("mine/embeddings.bin", x.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/embeddings.bin";
+    }
+
+    std::vector<float> out(config.dim);
+    rmsNorm(x, w.att_norm, 1e-5, config.dim, out);
+
+    if (dumpFloats("mine/att_norm.bin", out.data(), config.dim) == false) {
+        std::cerr << "failed to dump data to mine/att_norm.bin";
     }
 
     munmap(data, st.st_size);
