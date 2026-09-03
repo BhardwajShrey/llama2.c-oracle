@@ -209,6 +209,8 @@ int main() {
     }
 
     std::vector<float> out(config.dim);
+    // 1e-5 is not in Config -- it's hardcoded here to match run.c's rmsnorm()
+    // and model.py's ModelArgs.norm_eps default (see GLOSSARY.md "Per-layer norms")
     rmsNorm(x, w.att_norm, 1e-5, config.dim, out);
 
     if (dumpFloats("mine/att_norm.bin", out.data(), config.dim) == false) {

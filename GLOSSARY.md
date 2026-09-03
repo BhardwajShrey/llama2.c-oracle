@@ -42,6 +42,13 @@ it, values passing through many stacked layers tend to drift and grow (or
 shrink) until the numbers become unstable. There's one of these before the
 attention block and one before the feed-forward block, in every layer.
 
+**Where `eps` comes from:** RMSNorm's epsilon (`1e-5`, guards against
+dividing by zero when a vector's sum-of-squares is ~0) is **not** part of
+the checkpoint's `Config` header — it's hardcoded as a constant in both
+`run.c`'s `rmsnorm()` and `model.py`'s `ModelArgs.norm_eps` default. The
+from-scratch engine (`main.cpp`) hardcodes the same `1e-5` for the same
+reason: there's nothing in the `.bin` file to read it from.
+
 ## Outside the layers
 
 Three tensors live outside the per-layer stack:
