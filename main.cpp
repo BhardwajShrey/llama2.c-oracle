@@ -106,12 +106,11 @@ void initWeights(const Config& config, Weights& w, void* data, bool sharedWeight
     // std::cout << "advanced: " << advanced << " floats\n";
 }
 
-void getTokEmbedding(const Weights& w, std::vector<float>& x, int tokId) {
-    // x.size() equals config.dim. x is the right size, but the semantics should come from config
+void getTokEmbedding(const Weights& w, float* x, int tokId, int dim) {
     // TODO: Add a check for whether the token id is out of range. Decide what behaviour must come
-    long long xSize = static_cast<long long>(x.size());
+    long long xSize = static_cast<long long>(dim);
     float* startP = w.tok_embeddings + (tokId * xSize);
-    std::copy(startP, startP + xSize, x.data());
+    std::copy(startP, startP + xSize, x);
 }
 
 bool dumpFloats(const char* path, const float* arr, long long count) {
@@ -140,7 +139,7 @@ bool dumpFloats(const char* path, const float* arr, long long count) {
 }
 
 // x = input, g = w.att_norm (6 layers of 288 floats of weight), eps = 1e-5 (guards against divide by zero)
-void rmsNorm(std::vector<float>& x, float* g, float eps, const int dim, std::vector<float>& out) {
+void rmsNorm(float* x, float* g, float eps, const int dim, std::vector<float>& out) {
     float sumSquares {0};
 
     for (int i = 0; i < dim; i++) {
@@ -215,7 +214,7 @@ int main() {
     // printFirstN("wq", w.wq);
 
     std::vector<float> x(config.dim);
-    getTokEmbedding(w, x, 1);
+    getTokEmbedding(w, x.data(), 1, config.dim);
 
     if (dumpFloats("mine/embeddings.bin", x.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/embeddings.bin";
@@ -224,7 +223,7 @@ int main() {
     std::vector<float> rmsOut(config.dim);
     // 1e-5 is not in Config -- it's hardcoded here to match run.c's rmsnorm()
     // and model.py's ModelArgs.norm_eps default (see GLOSSARY.md "Per-layer norms")
-    rmsNorm(x, w.att_norm, 1e-5, config.dim, rmsOut);
+    rmsNorm(x.data(), w.att_norm, 1e-5, config.dim, rmsOut);
 
     if (dumpFloats("mine/att_norm.bin", rmsOut.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/att_norm.bin";

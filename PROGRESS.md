@@ -34,6 +34,13 @@ implemented, attention (Q/K/V + RoPE + scores) is next.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-09-05 — Phase 3 follow-up: `getTokEmbedding`/`rmsNorm` take raw
+  pointers instead of `std::vector&`.** Both functions now take `float* x`
+  plus an explicit `dim` parameter instead of a `std::vector<float>&`,
+  with call sites passing `x.data()`. Removes the implicit assumption that
+  the caller's vector happens to be sized `dim` — size is now a parameter,
+  not inferred from `x.size()`.
+
 - **2026-09-05 — Phase 3: first `matmul`.** Implemented a plain scalar
   `matmul(out, x, w, n, d)`: a `d × n` weight matrix times an `n × 1`
   vector, giving a `d × 1` output — the "matrix times *vector*, one token
