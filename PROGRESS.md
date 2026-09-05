@@ -34,6 +34,14 @@ implemented, attention (Q/K/V + RoPE + scores) is next.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-09-05 — Phase 3: Q/K/V projections.** Extended the single
+  `matmul` call against `w.wq` to also run against `w.wk` and `w.wv`, all
+  three against the same RMSNorm output — `matmulWq`/`matmulWk`/`matmulWv`,
+  dumped to `mine/matmul_w{q,k,v}.bin`. This is the query/key/value step
+  of attention (still layer 0, still token 1, still no RoPE or the actual
+  attention score/softmax/weighted-sum yet — just the three linear
+  projections that feed into it).
+
 - **2026-09-05 — Phase 3 follow-up: `getTokEmbedding`/`rmsNorm` take raw
   pointers instead of `std::vector&`.** Both functions now take `float* x`
   plus an explicit `dim` parameter instead of a `std::vector<float>&`,

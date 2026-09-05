@@ -229,11 +229,25 @@ int main() {
         std::cerr << "failed to dump data to mine/att_norm.bin";
     }
 
-    std::vector<float> matmulOut(config.dim);
-    matmul(matmulOut.data(), rmsOut.data(), w.wq, config.dim, config.dim);
+    std::vector<float> matmulWq(config.dim);
+    matmul(matmulWq.data(), rmsOut.data(), w.wq, config.dim, config.dim);
 
-    if (dumpFloats("mine/matmul_wq.bin", matmulOut.data(), config.dim) == false) {
+    if (dumpFloats("mine/matmul_wq.bin", matmulWq.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/matmul_wq.bin";
+    }
+
+    std::vector<float> matmulWk(config.dim);
+    matmul(matmulWk.data(), rmsOut.data(), w.wk, config.dim, config.dim);
+
+    if (dumpFloats("mine/matmul_wk.bin", matmulWk.data(), config.dim) == false) {
+        std::cerr << "failed to dump data to mine/matmul_wk.bin";
+    }
+
+    std::vector<float> matmulWv(config.dim);
+    matmul(matmulWv.data(), rmsOut.data(), w.wv, config.dim, config.dim);
+
+    if (dumpFloats("mine/matmul_wv.bin", matmulWv.data(), config.dim) == false) {
+        std::cerr << "failed to dump data to mine/matmul_wv.bin";
     }
 
     munmap(data, st.st_size);
