@@ -157,6 +157,19 @@ void rmsNorm(std::vector<float>& x, float* g, float eps, const int dim, std::vec
     }
 }
 
+// this is a d * n matrix by n * 1 matrix multiplication. End result is d * 1
+void matmul(float* out, const float* x, const float* w, int n, int d) {
+    for (int i = 0; i < d; i++) {
+        float acc = 0;
+        size_t rowNum = i * n;
+
+        for (int j = 0; j < n; j++) {
+            acc += w[rowNum + j] * x[j];
+        }
+        out[i] = acc;
+    }
+}
+
 int main() {
     int fd = open(filename, O_RDONLY);
     if (fd == -1) {
@@ -208,13 +221,20 @@ int main() {
         std::cerr << "failed to dump data to mine/embeddings.bin";
     }
 
-    std::vector<float> out(config.dim);
+    std::vector<float> rmsOut(config.dim);
     // 1e-5 is not in Config -- it's hardcoded here to match run.c's rmsnorm()
     // and model.py's ModelArgs.norm_eps default (see GLOSSARY.md "Per-layer norms")
-    rmsNorm(x, w.att_norm, 1e-5, config.dim, out);
+    rmsNorm(x, w.att_norm, 1e-5, config.dim, rmsOut);
 
-    if (dumpFloats("mine/att_norm.bin", out.data(), config.dim) == false) {
+    if (dumpFloats("mine/att_norm.bin", rmsOut.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/att_norm.bin";
+    }
+
+    std::vector<float> matmulOut(config.dim);
+    matmul(matmulOut.data(), rmsOut.data(), w.wq, config.dim, config.dim);
+
+    if (dumpFloats("mine/matmul_wq.bin", matmulOut.data(), config.dim) == false) {
+        std::cerr << "failed to dump data to mine/matmul_wq.bin";
     }
 
     munmap(data, st.st_size);

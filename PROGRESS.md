@@ -5,8 +5,8 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 ## Status
 
 Phase 2 (C++ skeleton: parses the `.bin` header, prints config) is done;
-Phase 3 (forward pass) is in progress — RMSNorm on the token embedding is
-implemented, attention is next.
+Phase 3 (forward pass) is in progress — RMSNorm and a scalar `matmul` are
+implemented, attention (Q/K/V + RoPE + scores) is next.
 
 ## Phase checklist
 
@@ -22,7 +22,7 @@ implemented, attention is next.
       the config.
 - [ ] **Phase 3 (in progress) — forward pass.** Implement the actual
       transformer forward pass in the from-scratch C++ engine, validate
-      against the oracle. RMSNorm on the embedding done; attention,
+      against the oracle. RMSNorm and a scalar `matmul` done; attention,
       SwiGLU FFN, and the layer loop remain.
 - [ ] **Phase 4 — optimization.** SIMD, cache-aware matmul, quantization,
       threading — the actual point of the project. Every change measured
@@ -33,6 +33,16 @@ implemented, attention is next.
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-05 — Phase 3: first `matmul`.** Implemented a plain scalar
+  `matmul(out, x, w, n, d)`: a `d × n` weight matrix times an `n × 1`
+  vector, giving a `d × 1` output — the "matrix times *vector*, one token
+  at a time" shape noted in `GLOSSARY.md`, not a general matrix-matrix
+  multiply. Ran it on the RMSNorm output against `w.wq` (still layer 0
+  only) and dumped the result to `mine/matmul_wq.bin`. This is the
+  reference/correctness version — Phase 4 is where this function gets
+  rewritten for speed (SIMD, cache blocking, etc.), so its current form is
+  deliberately the simplest thing that's obviously correct.
 
 - **2026-09-04 — Phase 3: RMSNorm.** Implemented `rmsNorm` (sum of
   squares over `dim` → divide by `dim` → add `eps` → reciprocal square
