@@ -139,7 +139,7 @@ bool dumpFloats(const char* path, const float* arr, long long count) {
 }
 
 // x = input, g = w.att_norm (6 layers of 288 floats of weight), eps = 1e-5 (guards against divide by zero)
-void rmsNorm(float* x, float* g, float eps, const int dim, std::vector<float>& out) {
+void rmsNorm(float* x, float* g, float eps, const int dim, float* out) {
     float sumSquares {0};
 
     for (int i = 0; i < dim; i++) {
@@ -223,7 +223,7 @@ int main() {
     std::vector<float> rmsOut(config.dim);
     // 1e-5 is not in Config -- it's hardcoded here to match run.c's rmsnorm()
     // and model.py's ModelArgs.norm_eps default (see GLOSSARY.md "Per-layer norms")
-    rmsNorm(x.data(), w.att_norm, 1e-5, config.dim, rmsOut);
+    rmsNorm(x.data(), w.att_norm, 1e-5, config.dim, rmsOut.data());
 
     if (dumpFloats("mine/att_norm.bin", rmsOut.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/att_norm.bin";
