@@ -34,6 +34,18 @@ implemented, attention (Q/K/V + RoPE + scores) is next.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-09-05 — Phase 3: introduced `RunState`.** Replaced the growing
+  pile of one-off `std::vector<float>` locals in `main` (`x`, `rmsOut`,
+  `matmulWq`, `matmulWk`, `matmulWv`) with a `RunState` struct
+  (`x`, `xb`, `q`, `k`, `v` so far, with `hb`/`hb2`/`att`/`logits`/KV-cache
+  fields commented in as placeholders for what's coming), built once via
+  `createRunState(config)`. Mirrors `run.c`'s own `RunState`/
+  `malloc_run_state` split between config-derived buffers and the
+  weights. Also tightened `rmsNorm` to take `float* out` (matching `x`,
+  which switched last commit — closes the inconsistency flagged then) and
+  cast `n` to `size_t` before the `i * n` multiply in `matmul`, ahead of
+  it mattering on a bigger model.
+
 - **2026-09-05 — Phase 3: Q/K/V projections.** Extended the single
   `matmul` call against `w.wq` to also run against `w.wk` and `w.wv`, all
   three against the same RMSNorm output — `matmulWq`/`matmulWk`/`matmulWv`,

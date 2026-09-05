@@ -33,6 +33,19 @@ struct Weights {
     float* output;
 };
 
+struct RunState {
+    std::vector<float> x;       // dim      - the activation
+    std::vector<float> xb;      // dim      - scratch after norm
+    std::vector<float> q;       // dim
+    std::vector<float> k;       // dim
+    std::vector<float> v;       // dim
+    // coming soon:
+    // hb, hb2                  // hidden_dim - FFN scratch
+    // att                      // seq_len    - attention scores
+    // logits                   // vocab_size
+    // key_cache, value_cache   // n_layers * seq_len * dim
+};
+
 void printFirstN(const char* msg, float* arr, int n = 5) {
     std::cout << msg << ": ";
     for (int i = 0; i < n; i++) {
@@ -70,7 +83,7 @@ void readConfig(void* data, Config& config, bool& sharedWeights) {
     config.vocab_size = std::abs(config.vocab_size); 
 }
 
-void print_config(const Config& config, bool& sharedWeights) {
+void print_config(const Config& config, const bool& sharedWeights) {
     std::cout << "config.dim: "         << config.dim << "\n"
               << "config.hidden_dim: "  << config.hidden_dim << "\n"
               << "config.n_layers: "    << config.n_layers << "\n"
@@ -104,6 +117,18 @@ void initWeights(const Config& config, Weights& w, void* data, bool sharedWeight
 
     // long long advanced = p - reinterpret_cast<float*>(static_cast<char*>(data) + sizeof(Config));
     // std::cout << "advanced: " << advanced << " floats\n";
+}
+
+RunState createRunState(const Config& config) {
+    int dim = config.dim;
+
+    return RunState {
+        .x   = std::vector<float> (dim),       // x  - dim      - the activation
+        .xb  = std::vector<float> (dim),       // xb - dim      - scratch after norm (RMS)
+        .q   = std::vector<float> (dim),       // q  - dim
+        .k   = std::vector<float> (dim),       // k  - dim
+        .v   = std::vector<float> (dim),       // v - dim
+    };
 }
 
 void getTokEmbedding(const Weights& w, float* x, int tokId, int dim) {
@@ -160,7 +185,7 @@ void rmsNorm(float* x, float* g, float eps, const int dim, float* out) {
 void matmul(float* out, const float* x, const float* w, int n, int d) {
     for (int i = 0; i < d; i++) {
         float acc = 0;
-        size_t rowNum = i * n;
+        size_t rowNum = i * static_cast<size_t>(n);
 
         for (int j = 0; j < n; j++) {
             acc += w[rowNum + j] * x[j];
@@ -198,7 +223,6 @@ int main() {
     print_config(config, sharedWeights); 
 
     long long fileSizeExpected = expected_file_size(config);
-
     long long fileSizeActual = st.st_size;
 
     std::cout << "expected: " << fileSizeExpected << "\n";
@@ -213,40 +237,33 @@ int main() {
     // printFirstN("tok_embeddings", w.tok_embeddings);
     // printFirstN("wq", w.wq);
 
-    std::vector<float> x(config.dim);
-    getTokEmbedding(w, x.data(), 1, config.dim);
+    RunState s = createRunState(config);
 
-    if (dumpFloats("mine/embeddings.bin", x.data(), config.dim) == false) {
+    getTokEmbedding(w, s.x.data(), 1, config.dim);
+
+    if (dumpFloats("mine/embeddings.bin", s.x.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/embeddings.bin";
     }
 
-    std::vector<float> rmsOut(config.dim);
     // 1e-5 is not in Config -- it's hardcoded here to match run.c's rmsnorm()
     // and model.py's ModelArgs.norm_eps default (see GLOSSARY.md "Per-layer norms")
-    rmsNorm(x.data(), w.att_norm, 1e-5, config.dim, rmsOut.data());
-
-    if (dumpFloats("mine/att_norm.bin", rmsOut.data(), config.dim) == false) {
+    rmsNorm(s.x.data(), w.att_norm, 1e-5, config.dim, s.xb.data());
+    if (dumpFloats("mine/att_norm.bin", s.xb.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/att_norm.bin";
     }
 
-    std::vector<float> matmulWq(config.dim);
-    matmul(matmulWq.data(), rmsOut.data(), w.wq, config.dim, config.dim);
-
-    if (dumpFloats("mine/matmul_wq.bin", matmulWq.data(), config.dim) == false) {
+    matmul(s.q.data(), s.xb.data(), w.wq, config.dim, config.dim);
+    if (dumpFloats("mine/matmul_wq.bin", s.q.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/matmul_wq.bin";
     }
 
-    std::vector<float> matmulWk(config.dim);
-    matmul(matmulWk.data(), rmsOut.data(), w.wk, config.dim, config.dim);
-
-    if (dumpFloats("mine/matmul_wk.bin", matmulWk.data(), config.dim) == false) {
+    matmul(s.k.data(), s.xb.data(), w.wk, config.dim, config.dim);
+    if (dumpFloats("mine/matmul_wk.bin", s.k.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/matmul_wk.bin";
     }
 
-    std::vector<float> matmulWv(config.dim);
-    matmul(matmulWv.data(), rmsOut.data(), w.wv, config.dim, config.dim);
-
-    if (dumpFloats("mine/matmul_wv.bin", matmulWv.data(), config.dim) == false) {
+    matmul(s.v.data(), s.xb.data(), w.wv, config.dim, config.dim);
+    if (dumpFloats("mine/matmul_wv.bin", s.v.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/matmul_wv.bin";
     }
 
