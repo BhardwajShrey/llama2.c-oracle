@@ -34,6 +34,21 @@ implemented, attention (Q/K/V + RoPE + scores) is next.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-09-06 — Phase 3: RoPE, via the checkpoint's precomputed tables
+  (correction to the 2026-08-19 plan).** Added `w.cos_table`/`w.sin_table`
+  to `Weights`, pointing at the two `seq_len × (head_dim/2)` blocks
+  `initWeights` was previously just skipping past, and a `rope()` that
+  rotates `q`/`k` (never `v`) pair-by-pair per head using those tables,
+  matching `run.c`'s rotation formula (`v0*cos - v1*sin`,
+  `v0*sin + v1*cos`) and `model.py`'s adjacent-pair convention. **This
+  reverses what the 2026-08-19 entry said** ("this engine will compute
+  RoPE angles directly instead of reading a cached table") — turns out
+  the checkpoint's legacy export format (`export.py`'s `legacy_export`)
+  really does write real, usable `freqs_cos`/`freqs_sin` tables (`run.c`
+  just chooses to recompute them at runtime via `cosf`/`sinf` instead of
+  reading them back); reading them directly is simpler here and the two
+  approaches are mathematically identical.
+
 - **2026-09-05 — Phase 3: introduced `RunState`.** Replaced the growing
   pile of one-off `std::vector<float>` locals in `main` (`x`, `rmsOut`,
   `matmulWq`, `matmulWk`, `matmulWv`) with a `RunState` struct
@@ -189,12 +204,19 @@ implemented, attention (Q/K/V + RoPE + scores) is next.
   assuming there's compute headroom left to optimize.
 - ~~`stories15M.bin` is 12,288 floats (49,152 bytes) larger than
   `header + all layer weights + final norm` accounts for.~~ **Resolved
-  2026-08-19:** it's two RoPE frequency tables (`seq_len × head_size/2`
-  each, for the real/imaginary rotation components) that `run.c` maps but
-  then never uses past computing an offset — this engine will compute RoPE
-  angles directly instead of reading a cached table, so the classifier
-  offset just skips past both (`seq_len * head_size` combined) without
-  keeping pointers to them.
+  2026-08-19, corrected 2026-09-06:** it's two RoPE frequency tables
+  (`seq_len × head_size/2` each). The 2026-08-19 note said this engine
+  would skip them and recompute RoPE angles on the fly like `run.c`
+  does — instead, as of 2026-09-06, `initWeights` keeps pointers to both
+  (`w.cos_table`/`w.sin_table`) and `rope()` reads them directly.
+- `expected_file_size()` still doesn't count `cos_table`/`sin_table` in
+  its byte total, even though `initWeights` now walks past and uses both
+  — so the "gap" the program prints at startup still reports 12,288
+  floats unaccounted for, when actually every float in the file is now
+  spoken for. The diagnostic just hasn't been updated to match; the two
+  functions computing checkpoint layout size have desynced the same way
+  the per-field size formulas did before (same root cause, same fix:
+  don't keep the same math in two places).
 
 ## Gotchas hit
 

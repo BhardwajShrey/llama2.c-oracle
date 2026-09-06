@@ -30,6 +30,8 @@ struct Weights {
     float* w2;
     float* w3;
     float* final_norm;
+    float* cos_table;
+    float* sin_table;
     float* output;
 };
 
@@ -97,22 +99,24 @@ void print_config(const Config& config, const bool& sharedWeights) {
 void initWeights(const Config& config, Weights& w, void* data, bool sharedWeights) {
     // skip header. that's where floats begin
     float* p = reinterpret_cast<float*>(static_cast<char*>(data) + sizeof(Config));
-    w.tok_embeddings    = p; p += (long long)config.vocab_size * config.dim;                    // tok_embeddings
-    w.att_norm          = p; p += (long long)config.n_layers * config.dim;                      // att_norm
-    w.wq                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wq
-    w.wk                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wk 
-    w.wv                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wv
-    w.wo                = p; p += (long long)config.n_layers * config.dim * config.dim;         // wo
-    w.ffn_norm          = p; p += (long long)config.n_layers * config.dim;                      // ffn_norm
-    w.w1                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;  // w1
-    w.w2                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;  // w2
-    w.w3                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;  // w3
-    w.final_norm        = p; p += (long long)config.dim;                                        // final_norm
+    w.tok_embeddings    = p; p += (long long)config.vocab_size * config.dim;                                    // tok_embeddings
+    w.att_norm          = p; p += (long long)config.n_layers * config.dim;                                      // att_norm
+    w.wq                = p; p += (long long)config.n_layers * config.dim * config.dim;                         // wq
+    w.wk                = p; p += (long long)config.n_layers * config.dim * config.dim;                         // wk 
+    w.wv                = p; p += (long long)config.n_layers * config.dim * config.dim;                         // wv
+    w.wo                = p; p += (long long)config.n_layers * config.dim * config.dim;                         // wo
+    w.ffn_norm          = p; p += (long long)config.n_layers * config.dim;                                      // ffn_norm
+    w.w1                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;                  // w1
+    w.w2                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;                  // w2
+    w.w3                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;                  // w3
+    w.final_norm        = p; p += (long long)config.dim;                                                        // final_norm
+    w.cos_table         = p; p += (long long)(long long)config.seq_len * (config.dim / config.n_heads / 2);     // cosine tables
+    w.sin_table         = p; p += (long long)(long long)config.seq_len * (config.dim / config.n_heads / 2);     // sine tables
 
     if (sharedWeights) {
         w.output = w.tok_embeddings;
     } else {
-        w.output = (p + (long long)config.seq_len * (config.dim / config.n_heads));
+        w.output = p;
     }
 
     // long long advanced = p - reinterpret_cast<float*>(static_cast<char*>(data) + sizeof(Config));
@@ -194,6 +198,32 @@ void matmul(float* out, const float* x, const float* w, int n, int d) {
     }
 }
 
+void rope(float* cosines, float* sines, const Config& config, int pos, float* q) {
+    // imagine cosines and sines as tables of seq_len rows and (head_dim / 2) entries per row
+    // at position 0 angles are zero. cosines will all be 1 and sines will be 0
+
+    int head_dim = (config.dim / config.n_heads);
+
+    cosines += (pos * head_dim / 2);
+    sines += (pos * head_dim / 2);
+
+    // printFirstN("cosines", cosines, 24);
+    // printFirstN("sines", sines, 24);
+
+    // break token down into n_heads (6) chunks of 48 floats each. Process 2 at a time
+
+    for (int h = 0; h < config.n_heads; h++) {
+        for (int i = 0; i < head_dim / 2; i++) {
+            int base = (h * head_dim) + (2 * i);
+            float x0 = q[base];
+            float x1 = q[base + 1];
+
+            q[base]     = x0 * cosines[i] - x1 * sines[i];
+            q[base + 1] = x0 * sines[i] + x1 * cosines[i];
+        }
+    }
+}
+
 int main() {
     int fd = open(filename, O_RDONLY);
     if (fd == -1) {
@@ -266,6 +296,12 @@ int main() {
     if (dumpFloats("mine/matmul_wv.bin", s.v.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/matmul_wv.bin";
     }
+
+    std::vector<float> copyOfQ(s.q);
+
+    // ROPE for q and k, not v
+    rope(w.cos_table, w.sin_table, config, 0, s.q.data());
+    rope(w.cos_table, w.sin_table, config, 0, s.k.data());
 
     munmap(data, st.st_size);
 
