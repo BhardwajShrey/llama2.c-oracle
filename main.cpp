@@ -102,8 +102,10 @@ void initWeights(const Config& config, Weights& w, void* data, bool sharedWeight
     float* p = reinterpret_cast<float*>(static_cast<char*>(data) + sizeof(Config));
     w.tok_embeddings    = p; p += (long long)config.vocab_size * config.dim;                                    // tok_embeddings
     w.att_norm          = p; p += (long long)config.n_layers * config.dim;                                      // att_norm
+    // TODO: wk/wv offsets assume n_kv_heads == n_heads (kv_dim == dim). run.c uses
+    // kv_dim = (dim * n_kv_heads) / n_heads for these two -- fix once attention block is done.
     w.wq                = p; p += (long long)config.n_layers * config.dim * config.dim;                         // wq
-    w.wk                = p; p += (long long)config.n_layers * config.dim * config.dim;                         // wk 
+    w.wk                = p; p += (long long)config.n_layers * config.dim * config.dim;                         // wk
     w.wv                = p; p += (long long)config.n_layers * config.dim * config.dim;                         // wv
     w.wo                = p; p += (long long)config.n_layers * config.dim * config.dim;                         // wo
     w.ffn_norm          = p; p += (long long)config.n_layers * config.dim;                                      // ffn_norm
@@ -135,6 +137,7 @@ RunState createRunState(const Config& config) {
         .q              = std::vector<float> (dim),                               // q  - dim
         .k              = std::vector<float> (dim),                               // k  - dim
         .v              = std::vector<float> (dim),                               // v - dim
+        // TODO: sized with dim, should be kv_dim = (dim * n_kv_heads) / n_heads -- see cacheOffset
         .key_cache      = std::vector<float> (n_layers * seq_len * dim),          // n_layers * seq_len * dim
         .value_cache    = std::vector<float> (n_layers * seq_len * dim)           // n_layers * seq_len * dim
     };
@@ -230,7 +233,9 @@ void rope(float* cosines, float* sines, const Config& config, int pos, float* q)
 }
 
 // k & v caches can be imagined as a 3-d array of dimensions n_layers * seq_len * dim
-// n_layer arrays of (seq_len arrays of length dim) 
+// n_layer arrays of (seq_len arrays of length dim)
+// TODO: dim here should be kv_dim = (dim * n_kv_heads) / n_heads, same as RunState's
+// key_cache/value_cache sizing in createRunState -- fix once attention block is done.
 int cacheOffset(int l, int pos, const Config& config) {
     return l * (config.seq_len * config.dim) + (pos * config.dim);
 }
@@ -298,6 +303,8 @@ int main() {
         std::cerr << "failed to dump data to mine/matmul_wq.bin";
     }
 
+    // TODO: n/d here should be kv_dim = (dim * n_kv_heads) / n_heads, not dim -- same
+    // GQA assumption as the wk/wv offsets in initWeights. Fix once attention block is done.
     matmul(s.k.data(), s.xb.data(), w.wk, config.dim, config.dim);
     if (dumpFloats("mine/matmul_wk.bin", s.k.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/matmul_wk.bin";
@@ -317,17 +324,6 @@ int main() {
     // copy v and post rope k for layer 0 and pos 0 into caches
     std::copy(s.k.data(), s.k.data() + config.dim, s.key_cache.data() + cacheOffset(0, 0, config));
     std::copy(s.v.data(), s.v.data() + config.dim, s.value_cache.data() + cacheOffset(0, 0, config));
-
-    // for (int i = 0; i < config.dim; i++) {
-    //     int offset = cacheOffset(0, 0, config);
-    //     if (s.k[i] != s.key_cache[offset + i]) {
-    //         std::cout << "k value not matching at i: " << i << " and offset: " << offset << "\n";
-    //     }
-
-    //     if (s.v[i] != s.value_cache[offset + i]) {
-    //         std::cout << "v value not matching at i: " << i << " and offset: " << offset << "\n";
-    //     }
-    // }
 
     munmap(data, st.st_size);
 
