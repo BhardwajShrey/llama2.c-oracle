@@ -36,16 +36,17 @@ struct Weights {
 };
 
 struct RunState {
-    std::vector<float> x;       // dim      - the activation
-    std::vector<float> xb;      // dim      - scratch after norm
-    std::vector<float> q;       // dim
-    std::vector<float> k;       // dim
-    std::vector<float> v;       // dim
+    std::vector<float> x;               // dim      - the activation
+    std::vector<float> xb;              // dim      - scratch after norm
+    std::vector<float> q;               // dim
+    std::vector<float> k;               // dim
+    std::vector<float> v;               // dim
+    std::vector<float> key_cache;       // n_layers * seq_len * dim
+    std::vector<float> value_cache;     // n_layers * seq_len * dim
     // coming soon:
-    // hb, hb2                  // hidden_dim - FFN scratch
-    // att                      // seq_len    - attention scores
-    // logits                   // vocab_size
-    // key_cache, value_cache   // n_layers * seq_len * dim
+    // hb, hb2                          // hidden_dim - FFN scratch
+    // att                              // seq_len    - attention scores
+    // logits                           // vocab_size
 };
 
 void printFirstN(const char* msg, float* arr, int n = 5) {
@@ -124,14 +125,18 @@ void initWeights(const Config& config, Weights& w, void* data, bool sharedWeight
 }
 
 RunState createRunState(const Config& config) {
-    int dim = config.dim;
+    int dim {config.dim},
+        n_layers {config.n_layers},
+        seq_len {config.seq_len};
 
     return RunState {
-        .x   = std::vector<float> (dim),       // x  - dim      - the activation
-        .xb  = std::vector<float> (dim),       // xb - dim      - scratch after norm (RMS)
-        .q   = std::vector<float> (dim),       // q  - dim
-        .k   = std::vector<float> (dim),       // k  - dim
-        .v   = std::vector<float> (dim),       // v - dim
+        .x              = std::vector<float> (dim),                               // x  - dim      - the activation
+        .xb             = std::vector<float> (dim),                               // xb - dim      - scratch after norm (RMS)
+        .q              = std::vector<float> (dim),                               // q  - dim
+        .k              = std::vector<float> (dim),                               // k  - dim
+        .v              = std::vector<float> (dim),                               // v - dim
+        .key_cache      = std::vector<float> (n_layers * seq_len * dim),          // n_layers * seq_len * dim
+        .value_cache    = std::vector<float> (n_layers * seq_len * dim)           // n_layers * seq_len * dim
     };
 }
 
@@ -224,6 +229,12 @@ void rope(float* cosines, float* sines, const Config& config, int pos, float* q)
     }
 }
 
+// k & v caches can be imagined as a 3-d array of dimensions n_layers * seq_len * dim
+// n_layer arrays of (seq_len arrays of length dim) 
+int cacheOffset(int l, int pos, const Config& config) {
+    return l * (config.seq_len * config.dim) + (pos * config.dim);
+}
+
 int main() {
     int fd = open(filename, O_RDONLY);
     if (fd == -1) {
@@ -297,11 +308,26 @@ int main() {
         std::cerr << "failed to dump data to mine/matmul_wv.bin";
     }
 
-    std::vector<float> copyOfQ(s.q);
-
     // ROPE for q and k, not v
     rope(w.cos_table, w.sin_table, config, 0, s.q.data());
     rope(w.cos_table, w.sin_table, config, 0, s.k.data());
+
+    // attention stage begins
+
+    // copy v and post rope k for layer 0 and pos 0 into caches
+    std::copy(s.k.data(), s.k.data() + config.dim, s.key_cache.data() + cacheOffset(0, 0, config));
+    std::copy(s.v.data(), s.v.data() + config.dim, s.value_cache.data() + cacheOffset(0, 0, config));
+
+    // for (int i = 0; i < config.dim; i++) {
+    //     int offset = cacheOffset(0, 0, config);
+    //     if (s.k[i] != s.key_cache[offset + i]) {
+    //         std::cout << "k value not matching at i: " << i << " and offset: " << offset << "\n";
+    //     }
+
+    //     if (s.v[i] != s.value_cache[offset + i]) {
+    //         std::cout << "v value not matching at i: " << i << " and offset: " << offset << "\n";
+    //     }
+    // }
 
     munmap(data, st.st_size);
 

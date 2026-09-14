@@ -34,6 +34,16 @@ implemented, attention (Q/K/V + RoPE + scores) is next.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-09-15 — Phase 3: KV cache, first entries written.** Added
+  `key_cache`/`value_cache` (`n_layers * seq_len * dim` each) to
+  `RunState`, and `cacheOffset(layer, pos, config)` to compute where a
+  given layer/position's slice starts. After RoPE, copies the current
+  (post-rotation) `k` and (raw) `v` into the cache at layer 0, position 0
+  — mirrors `run.c`'s pattern of storing rotated keys and unrotated
+  values. Attention's actual score/softmax/weighted-sum step is next; the
+  cache exists now so that step has somewhere to read previous positions'
+  K/V from once there's more than one position.
+
 - **2026-09-06 — Phase 3: RoPE, via the checkpoint's precomputed tables
   (correction to the 2026-08-19 plan).** Added `w.cos_table`/`w.sin_table`
   to `Weights`, pointing at the two `seq_len × (head_dim/2)` blocks
