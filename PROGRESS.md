@@ -5,8 +5,10 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 ## Status
 
 Phase 2 (C++ skeleton: parses the `.bin` header, prints config) is done;
-Phase 3 (forward pass) is in progress — RMSNorm and a scalar `matmul` are
-implemented, attention (Q/K/V + RoPE + scores) is next.
+Phase 3 (forward pass) is in progress — RMSNorm, `matmul`, RoPE, and the
+attention score/softmax/weighted-sum loop are implemented (single token,
+single layer, GQA assumptions still open per the TODOs in `main.cpp`); the
+`wo` output projection, SwiGLU FFN, and the layer loop are next.
 
 ## Phase checklist
 

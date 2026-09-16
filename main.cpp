@@ -43,9 +43,9 @@ struct RunState {
     std::vector<float> v;               // dim
     std::vector<float> key_cache;       // n_layers * seq_len * dim
     std::vector<float> value_cache;     // n_layers * seq_len * dim
+    std::vector<float> att;             // seq_len    - attention scores
     // coming soon:
     // hb, hb2                          // hidden_dim - FFN scratch
-    // att                              // seq_len    - attention scores
     // logits                           // vocab_size
 };
 
@@ -139,7 +139,8 @@ RunState createRunState(const Config& config) {
         .v              = std::vector<float> (dim),                               // v - dim
         // TODO: sized with dim, should be kv_dim = (dim * n_kv_heads) / n_heads -- see cacheOffset
         .key_cache      = std::vector<float> (n_layers * seq_len * dim),          // n_layers * seq_len * dim
-        .value_cache    = std::vector<float> (n_layers * seq_len * dim)           // n_layers * seq_len * dim
+        .value_cache    = std::vector<float> (n_layers * seq_len * dim),          // n_layers * seq_len * dim
+        .att            = std::vector<float> (seq_len)                            // seq_len
     };
 }
 
@@ -240,6 +241,16 @@ int cacheOffset(int l, int pos, const Config& config) {
     return l * (config.seq_len * config.dim) + (pos * config.dim);
 }
 
+float dot(float* a, float* b, int len) {
+    float dot_product {0};
+
+    for (int i = 0; i < len; i++) {
+        dot_product += (a[i] * b[i]);
+    }
+
+    return dot_product;
+}
+
 int main() {
     int fd = open(filename, O_RDONLY);
     if (fd == -1) {
@@ -285,7 +296,10 @@ int main() {
 
     RunState s = createRunState(config);
 
-    getTokEmbedding(w, s.x.data(), 1, config.dim);
+    // some sane defaults. For testing
+    int token_id {1}, layer {0}, pos {0};
+
+    getTokEmbedding(w, s.x.data(), token_id, config.dim);
 
     if (dumpFloats("mine/embeddings.bin", s.x.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/embeddings.bin";
@@ -316,14 +330,68 @@ int main() {
     }
 
     // ROPE for q and k, not v
-    rope(w.cos_table, w.sin_table, config, 0, s.q.data());
-    rope(w.cos_table, w.sin_table, config, 0, s.k.data());
+    rope(w.cos_table, w.sin_table, config, pos, s.q.data());
+    rope(w.cos_table, w.sin_table, config, pos, s.k.data());
 
     // attention stage begins
 
     // copy v and post rope k for layer 0 and pos 0 into caches
-    std::copy(s.k.data(), s.k.data() + config.dim, s.key_cache.data() + cacheOffset(0, 0, config));
-    std::copy(s.v.data(), s.v.data() + config.dim, s.value_cache.data() + cacheOffset(0, 0, config));
+    std::copy(s.k.data(), s.k.data() + config.dim, s.key_cache.data() + cacheOffset(layer, pos, config));
+    std::copy(s.v.data(), s.v.data() + config.dim, s.value_cache.data() + cacheOffset(layer, pos, config));
+
+    int head_dim {config.dim / config.n_heads};
+
+    for (int h = 0; h < config.n_heads; h++) {
+        // processing happens per head. each head fully computes its own scores before the next head starts. softmax and weighted sum will reside in this for loop only
+        int slice = h * head_dim;       // what index does the head begin at. slice = one head of len head_dim
+
+        // calculating score
+        for (int t = 0; t <= pos; t++) {
+            float* k_t = s.key_cache.data() + cacheOffset(layer, t, config) + slice;
+            float score = dot(s.q.data() + slice, k_t, head_dim) / sqrtf(head_dim);
+            s.att[t] = score;
+        }
+
+        // softmax over 0..pos
+        // involves four passes over att
+        // first pass
+        float max_att = INT_MIN;
+        for (int i = 0; i <= pos; i++) {
+            if (s.att[i] >= max_att) {
+                max_att = s.att[i];
+            }
+        }
+
+        // second pass. third pass sums up all the values. adding it here only
+        float sum_att {0};
+        for (int i = 0; i <= pos; i++) {
+            s.att[i] = expf(s.att[i] - max_att);
+            sum_att += s.att[i];
+        }
+
+        // final pass
+        for (int i = 0; i < pos; i++) {
+            s.att[i] /= sum_att;
+        }
+
+        // weighted sum
+        // zero the output slice (re-use xb used for rms earlier)
+        for (int i = 0; i < head_dim; i++) {
+            s.xb[slice + i] = 0;
+        }
+
+        for (int t = 0; t <= pos; t++) {
+            float* v_t = s.value_cache.data() + cacheOffset(layer, t, config) + slice;
+
+            for (int d = 0; d < head_dim; d++) {
+                s.xb[slice + d] += (s.att[t] * v_t[d]);
+            }
+        }
+    }
+
+    if (dumpFloats("mine/att_xb.bin", s.xb.data(), config.dim) == false) {
+        std::cerr << "failed to dump data from s.xb to mine/att_xb.bin";
+    }
 
     munmap(data, st.st_size);
 
