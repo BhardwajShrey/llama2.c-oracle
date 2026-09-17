@@ -244,7 +244,7 @@ int cacheOffset(int l, int pos, const Config& config) {
     return l * (config.seq_len * config.dim) + (pos * config.dim);
 }
 
-float dot(float* a, float* b, int len) {
+float dot(const float* a, const float* b, int len) {
     float dot_product {0};
 
     for (int i = 0; i < len; i++) {
@@ -373,7 +373,7 @@ int main() {
         }
 
         // final pass
-        for (int i = 0; i < pos; i++) {
+        for (int i = 0; i <= pos; i++) {
             s.att[i] /= sum_att;
         }
 

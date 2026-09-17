@@ -37,21 +37,23 @@ single layer, GQA assumptions still open per the TODOs in `main.cpp`); the
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-09-17 — Phase 3 follow-up: fixed the softmax off-by-one.**
+  Normalization loop now runs `i <= pos` (was `i < pos`), matching
+  `run.c`'s `softmax(att, pos+1)`. Also made `dot()` take `const float*`
+  for both inputs, matching `matmul`'s style. Since `pos=0` is still the
+  only tested case, this fix is invisible in today's output — the bug it
+  fixes only manifests once there's more than one cached position — but
+  the code is now correct ahead of that, rather than accidentally correct
+  because of the test's current shape.
+
 - **2026-09-17 — Phase 3: attention score, softmax, weighted sum.**
   Implemented the rest of attention per head: dot-product score against
   every cached position `0..pos` (scaled by `1/sqrt(head_dim)`), softmax
   over those scores, then a weighted sum of the cached values into
   `s.xb`, dumped to `mine/att_xb.bin`. Matches `run.c`'s per-head loop
   structure and its `dot`/scale/softmax/weighted-sum steps. **Found a
-  bug while reviewing:** the softmax normalization pass loops
-  `i < pos`, but `run.c`'s equivalent (`softmax(att, pos+1)`) normalizes
-  `0..pos` inclusive — at `pos=0` (today's only tested case) this loop
-  body never runs at all, and it happens to not matter there (a
-  single-element softmax is 1.0 either way), but it will silently
-  produce wrong, unnormalized attention weights the moment there's more
-  than one cached position. Not yet fixed — same blind spot as RoPE's
-  `pos=0` issue noted 2026-09-06: testing only at `pos=0` hides bugs that
-  only show up with real sequence length.
+  bug while reviewing:** the softmax normalization pass looped `i < pos`
+  instead of `i <= pos` — fixed same day, see follow-up entry above.
 
 - **2026-09-15 — Phase 3: KV cache, first entries written.** Added
   `key_cache`/`value_cache` (`n_layers * seq_len * dim` each) to
