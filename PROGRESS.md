@@ -37,6 +37,12 @@ single layer, GQA assumptions still open per the TODOs in `main.cpp`); the
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-09-18 — Phase 3 follow-up: extracted `writeToCache`.** Pulled
+  the two `std::copy` calls writing `k`/`v` into their caches into a
+  single `writeToCache(in, cache, layer, pos, config)` helper. No
+  behavior change — still goes through `cacheOffset`, so the existing
+  `kv_dim`-vs-`dim` TODO still applies here too.
+
 - **2026-09-17 — Phase 3 follow-up: fixed the softmax off-by-one.**
   Normalization loop now runs `i <= pos` (was `i < pos`), matching
   `run.c`'s `softmax(att, pos+1)`. Also made `dot()` take `const float*`

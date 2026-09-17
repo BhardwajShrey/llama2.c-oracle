@@ -244,6 +244,10 @@ int cacheOffset(int l, int pos, const Config& config) {
     return l * (config.seq_len * config.dim) + (pos * config.dim);
 }
 
+void writeToCache(const float* in, float* cache, int layer, int pos, const Config& config) {
+    std::copy(in, in + config.dim, cache + cacheOffset(layer, pos, config));
+}
+
 float dot(const float* a, const float* b, int len) {
     float dot_product {0};
 
@@ -339,8 +343,8 @@ int main() {
     // attention stage begins
 
     // copy v and post rope k for layer 0 and pos 0 into caches
-    std::copy(s.k.data(), s.k.data() + config.dim, s.key_cache.data() + cacheOffset(layer, pos, config));
-    std::copy(s.v.data(), s.v.data() + config.dim, s.value_cache.data() + cacheOffset(layer, pos, config));
+    writeToCache(s.k.data(), s.key_cache.data(), layer, pos, config);
+    writeToCache(s.v.data(), s.value_cache.data(), layer, pos, config);
 
     int head_dim {config.dim / config.n_heads};
 
