@@ -24,8 +24,9 @@ single layer, GQA assumptions still open per the TODOs in `main.cpp`); the
       the config.
 - [ ] **Phase 3 (in progress) — forward pass.** Implement the actual
       transformer forward pass in the from-scratch C++ engine, validate
-      against the oracle. RMSNorm and a scalar `matmul` done; attention,
-      SwiGLU FFN, and the layer loop remain.
+      against the oracle. RMSNorm, `matmul`, RoPE, and the attention
+      score/softmax/weighted-sum loop done (single token/layer); `wo`
+      output projection, SwiGLU FFN, and the layer loop remain.
 - [ ] **Phase 4 — optimization.** SIMD, cache-aware matmul, quantization,
       threading — the actual point of the project. Every change measured
       before/after per `BENCHMARKS.md`.
@@ -35,6 +36,22 @@ single layer, GQA assumptions still open per the TODOs in `main.cpp`); the
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-17 — Phase 3: attention score, softmax, weighted sum.**
+  Implemented the rest of attention per head: dot-product score against
+  every cached position `0..pos` (scaled by `1/sqrt(head_dim)`), softmax
+  over those scores, then a weighted sum of the cached values into
+  `s.xb`, dumped to `mine/att_xb.bin`. Matches `run.c`'s per-head loop
+  structure and its `dot`/scale/softmax/weighted-sum steps. **Found a
+  bug while reviewing:** the softmax normalization pass loops
+  `i < pos`, but `run.c`'s equivalent (`softmax(att, pos+1)`) normalizes
+  `0..pos` inclusive — at `pos=0` (today's only tested case) this loop
+  body never runs at all, and it happens to not matter there (a
+  single-element softmax is 1.0 either way), but it will silently
+  produce wrong, unnormalized attention weights the moment there's more
+  than one cached position. Not yet fixed — same blind spot as RoPE's
+  `pos=0` issue noted 2026-09-06: testing only at `pos=0` hides bugs that
+  only show up with real sequence length.
 
 - **2026-09-15 — Phase 3: KV cache, first entries written.** Added
   `key_cache`/`value_cache` (`n_layers * seq_len * dim` each) to

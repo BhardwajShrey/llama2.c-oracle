@@ -38,6 +38,7 @@ struct Weights {
 struct RunState {
     std::vector<float> x;               // dim      - the activation
     std::vector<float> xb;              // dim      - scratch after norm
+    std::vector<float> xb2;             // dim      - scratch after matmul, post attention
     std::vector<float> q;               // dim
     std::vector<float> k;               // dim
     std::vector<float> v;               // dim
@@ -134,6 +135,7 @@ RunState createRunState(const Config& config) {
     return RunState {
         .x              = std::vector<float> (dim),                               // x  - dim      - the activation
         .xb             = std::vector<float> (dim),                               // xb - dim      - scratch after norm (RMS)
+        .xb2            = std::vector<float> (dim),                               // xb2 - dim      - scratch after matmul with wo post attention block
         .q              = std::vector<float> (dim),                               // q  - dim
         .k              = std::vector<float> (dim),                               // k  - dim
         .v              = std::vector<float> (dim),                               // v - dim
@@ -195,6 +197,7 @@ void rmsNorm(float* x, float* g, float eps, const int dim, float* out) {
 }
 
 // this is a d * n matrix by n * 1 matrix multiplication. End result is d * 1
+// DISCLAIMER: if the same buffer is passed as both out and x, matmul will be corrupted
 void matmul(float* out, const float* x, const float* w, int n, int d) {
     for (int i = 0; i < d; i++) {
         float acc = 0;
@@ -391,6 +394,16 @@ int main() {
 
     if (dumpFloats("mine/att_xb.bin", s.xb.data(), config.dim) == false) {
         std::cerr << "failed to dump data from s.xb to mine/att_xb.bin";
+    }
+
+    matmul(s.xb2.data(), s.xb.data(), w.wo, config.dim, config.dim);
+
+    if (dumpFloats("mine/att_xb2.bin", s.xb2.data(), config.dim) == false) {
+        std::cerr << "failed to dump data from s.xb2 to mine/att_xb2.bin";
+    }
+
+    for (int i = 0; i < config.dim; i++) {
+        s.x[i] += s.q[i];
     }
 
     munmap(data, st.st_size);
