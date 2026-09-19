@@ -45,9 +45,9 @@ struct RunState {
     std::vector<float> key_cache;       // n_layers * seq_len * dim
     std::vector<float> value_cache;     // n_layers * seq_len * dim
     std::vector<float> att;             // seq_len    - attention scores
-    // coming soon:
-    // hb, hb2                          // hidden_dim - FFN scratch
-    // logits                           // vocab_size
+    std::vector<float> hb;              // hidden_dim - FFN scratch
+    std::vector<float> hb2;             // hidden_dim - FFN scratch
+    std::vector<float> logits;          // vocab_size
 };
 
 void printFirstN(const char* msg, float* arr, int n = 5) {
@@ -111,7 +111,7 @@ void initWeights(const Config& config, Weights& w, void* data, bool sharedWeight
     w.wo                = p; p += (long long)config.n_layers * config.dim * config.dim;                         // wo
     w.ffn_norm          = p; p += (long long)config.n_layers * config.dim;                                      // ffn_norm
     w.w1                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;                  // w1
-    w.w2                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;                  // w2
+    w.w2                = p; p += (long long)config.n_layers * config.hidden_dim * config.dim;                  // w2
     w.w3                = p; p += (long long)config.n_layers * config.dim * config.hidden_dim;                  // w3
     w.final_norm        = p; p += (long long)config.dim;                                                        // final_norm
     w.cos_table         = p; p += (long long)(long long)config.seq_len * (config.dim / config.n_heads / 2);     // cosine tables
@@ -128,9 +128,11 @@ void initWeights(const Config& config, Weights& w, void* data, bool sharedWeight
 }
 
 RunState createRunState(const Config& config) {
-    int dim {config.dim},
-        n_layers {config.n_layers},
-        seq_len {config.seq_len};
+    int dim         {config.dim},
+        n_layers    {config.n_layers},
+        seq_len     {config.seq_len},
+        hidden_dim  {config.hidden_dim},
+        vocab_size  {config.vocab_size};
 
     return RunState {
         .x              = std::vector<float> (dim),                               // x  - dim      - the activation
@@ -142,7 +144,10 @@ RunState createRunState(const Config& config) {
         // TODO: sized with dim, should be kv_dim = (dim * n_kv_heads) / n_heads -- see cacheOffset
         .key_cache      = std::vector<float> (n_layers * seq_len * dim),          // n_layers * seq_len * dim
         .value_cache    = std::vector<float> (n_layers * seq_len * dim),          // n_layers * seq_len * dim
-        .att            = std::vector<float> (seq_len)                            // seq_len
+        .att            = std::vector<float> (seq_len),                           // seq_len
+        .hb             = std::vector<float> (hidden_dim),                        // hidden_dim
+        .hb2            = std::vector<float> (hidden_dim),                        // hidden_dim
+        .logits         = std::vector<float> (vocab_size),                        // vocab_size
     };
 }
 
@@ -178,8 +183,13 @@ bool dumpFloats(const char* path, const float* arr, long long count) {
     return true;
 }
 
-// x = input, g = w.att_norm (6 layers of 288 floats of weight), eps = 1e-5 (guards against divide by zero)
-void rmsNorm(float* x, float* g, float eps, const int dim, float* out) {
+// x = input, g = a per-layer norm weight (att_norm or ffn_norm, caller offsets by layer),
+// dim floats each. eps guards against divide by zero and is hardcoded below (not a
+// parameter) -- it's not in Config either; matches run.c's rmsnorm() and model.py's
+// ModelArgs.norm_eps default (see GLOSSARY.md "Per-layer norms")
+void rmsNorm(float* x, float* g, const int dim, float* out) {
+    const float eps {1e-5f};
+
     float sumSquares {0};
 
     for (int i = 0; i < dim; i++) {
@@ -198,6 +208,8 @@ void rmsNorm(float* x, float* g, float eps, const int dim, float* out) {
 
 // this is a d * n matrix by n * 1 matrix multiplication. End result is d * 1
 // DISCLAIMER: if the same buffer is passed as both out and x, matmul will be corrupted
+// n = number of weights in w
+// d = dimension of each weight, also equal to dimension of x
 void matmul(float* out, const float* x, const float* w, int n, int d) {
     for (int i = 0; i < d; i++) {
         float acc = 0;
@@ -258,6 +270,16 @@ float dot(const float* a, const float* b, int len) {
     return dot_product;
 }
 
+float sigmoid(float v) {
+    return 1.f / (1.f + expf(-v));
+}
+
+void swiGLU(float* out, float* hb, float* hb2, int len) {
+    for (int i = 0; i < len; i++) {
+        hb[i] = hb[i] * sigmoid(hb[i]) * hb2[i];
+    }
+}
+
 int main() {
     int fd = open(filename, O_RDONLY);
     if (fd == -1) {
@@ -312,26 +334,26 @@ int main() {
         std::cerr << "failed to dump data to mine/embeddings.bin";
     }
 
-    // 1e-5 is not in Config -- it's hardcoded here to match run.c's rmsnorm()
-    // and model.py's ModelArgs.norm_eps default (see GLOSSARY.md "Per-layer norms")
-    rmsNorm(s.x.data(), w.att_norm, 1e-5, config.dim, s.xb.data());
+    rmsNorm(s.x.data(), w.att_norm + (layer * config.dim), config.dim, s.xb.data());
     if (dumpFloats("mine/att_norm.bin", s.xb.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/att_norm.bin";
     }
 
-    matmul(s.q.data(), s.xb.data(), w.wq, config.dim, config.dim);
+    long long kqvOffset {layer * config.dim * config.dim};
+
+    matmul(s.q.data(), s.xb.data(), w.wq + kqvOffset, config.dim, config.dim);
     if (dumpFloats("mine/matmul_wq.bin", s.q.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/matmul_wq.bin";
     }
 
     // TODO: n/d here should be kv_dim = (dim * n_kv_heads) / n_heads, not dim -- same
     // GQA assumption as the wk/wv offsets in initWeights. Fix once attention block is done.
-    matmul(s.k.data(), s.xb.data(), w.wk, config.dim, config.dim);
+    matmul(s.k.data(), s.xb.data(), w.wk + kqvOffset, config.dim, config.dim);
     if (dumpFloats("mine/matmul_wk.bin", s.k.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/matmul_wk.bin";
     }
 
-    matmul(s.v.data(), s.xb.data(), w.wv, config.dim, config.dim);
+    matmul(s.v.data(), s.xb.data(), w.wv + kqvOffset, config.dim, config.dim);
     if (dumpFloats("mine/matmul_wv.bin", s.v.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/matmul_wv.bin";
     }
@@ -407,7 +429,41 @@ int main() {
     }
 
     for (int i = 0; i < config.dim; i++) {
-        s.x[i] += s.q[i];
+        s.x[i] += s.xb2[i];
+    }
+
+    // Attention ends
+
+    // FEED FORWARD BEGINS
+    // w1 and w3 are dim * hidden_dim matrices. w2 is hidden_dim * dim
+    long long w1w3offset {layer * config.dim * config.hidden_dim};
+    long long w2offset   {layer * config.hidden_dim * config.dim};      // yeah yeah its the same as w1w3offset, this is more about the principle
+
+    rmsNorm(s.x.data(), w.ffn_norm + (layer * config.dim), config.dim, s.xb.data());
+    if (dumpFloats("mine/ffn_norm.bin", s.xb.data(), config.dim) == false) {
+        std::cerr << "failed to dump data from s.xb to mine/ffn_norm.bin";
+    }
+
+    matmul(s.hb.data(), s.xb.data(), w.w1 + w1w3offset, config.dim, config.hidden_dim);          // dim -> hidden_dim
+    if (dumpFloats("mine/ffn_w1.bin", s.hb.data(), config.hidden_dim) == false) {
+        std::cerr << "failed to dump data from s.hb to mine/ffn_w1.bin";
+    }
+
+    matmul(s.hb2.data(), s.xb.data(), w.w3 + w1w3offset, config.dim, config.hidden_dim);         // dim -> hidden_dim
+    if (dumpFloats("mine/ffn_w3.bin", s.hb2.data(), config.hidden_dim) == false) {
+        std::cerr << "failed to dump data from s.hb2 to mine/ffn_w3.bin";
+    }
+
+    swiGLU(s.hb.data(), s.hb.data(), s.hb2.data(), config.hidden_dim);                           // elementwise, 768 floats
+    
+    std::vector<float> out(config.dim);
+    matmul(out.data(), s.hb.data(), w.w2 + w2offset, config.hidden_dim, config.dim);
+    if (dumpFloats("mine/ffn_w2.bin", out.data(), config.dim) == false) {
+        std::cerr << "failed to dump data from out to mine/ffn_w2.bin";
+    }
+
+    for (int i = 0; i < config.dim; i++) {
+        s.x[i] += out[i];
     }
 
     munmap(data, st.st_size);

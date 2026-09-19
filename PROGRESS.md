@@ -5,10 +5,13 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 ## Status
 
 Phase 2 (C++ skeleton: parses the `.bin` header, prints config) is done;
-Phase 3 (forward pass) is in progress — RMSNorm, `matmul`, RoPE, and the
-attention score/softmax/weighted-sum loop are implemented (single token,
-single layer, GQA assumptions still open per the TODOs in `main.cpp`); the
-`wo` output projection, SwiGLU FFN, and the layer loop are next.
+Phase 3 (forward pass) is in progress — one full layer's forward pass
+(RMSNorm → Q/K/V → RoPE → attention → `wo` → residual → RMSNorm → SwiGLU
+FFN → residual) now runs end to end for layer 0 / token 1 / pos 0. GQA
+assumptions are still open per the TODOs in `main.cpp`, plus a newly
+found gap: `wo`'s matmul isn't offset by layer yet, unlike every other
+per-layer weight. Final norm, the classifier head, and the layer loop
+(multiple layers, multiple positions) are next.
 
 ## Phase checklist
 
@@ -24,9 +27,9 @@ single layer, GQA assumptions still open per the TODOs in `main.cpp`); the
       the config.
 - [ ] **Phase 3 (in progress) — forward pass.** Implement the actual
       transformer forward pass in the from-scratch C++ engine, validate
-      against the oracle. RMSNorm, `matmul`, RoPE, and the attention
-      score/softmax/weighted-sum loop done (single token/layer); `wo`
-      output projection, SwiGLU FFN, and the layer loop remain.
+      against the oracle. One full layer done end to end (attention +
+      `wo` + residual + SwiGLU FFN + residual) for layer 0/token 1/pos 0;
+      final norm, classifier head, and the layer loop remain.
 - [ ] **Phase 4 — optimization.** SIMD, cache-aware matmul, quantization,
       threading — the actual point of the project. Every change measured
       before/after per `BENCHMARKS.md`.
@@ -36,6 +39,27 @@ single layer, GQA assumptions still open per the TODOs in `main.cpp`); the
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-19 — Phase 3: `wo` residual fix, SwiGLU FFN, per-layer
+  weight offsets, eps moved inside `rmsNorm`.** Fixed a real bug: the
+  post-attention residual add was `s.x[i] += s.q[i]` (adding the raw
+  query vector back into the residual stream instead of the actual
+  `wo`-projected attention output, `s.xb2`) — now correctly
+  `s.x[i] += s.xb2[i]`. Added the SwiGLU feed-forward block (`w1`/`w3`
+  matmuls, `swiGLU()` combining them via `sigmoid`, `w2` matmul back
+  down, residual add), matching `run.c`'s FFN section exactly. Added
+  explicit per-layer offsets (`kqvOffset`, `w1w3offset`, `w2offset`) to
+  every weight lookup that needed one (`att_norm`, `wq`/`wk`/`wv`,
+  `ffn_norm`, `w1`/`w2`/`w3`) — all checked against `run.c`'s equivalent
+  offset expressions and correct. **Found while checking:** `w.wo`'s
+  matmul call has no layer offset at all, unlike every other per-layer
+  weight — invisible today since `layer` is hardcoded to `0`, but it'll
+  break the moment the layer loop exists. At my suggestion (and with the
+  user's explicit go-ahead to override the "no engine code" rule for
+  this one case), also pulled `eps` (`1e-5`) inside `rmsNorm` itself
+  instead of passing it from every call site, and updated the comment
+  above the function to match — verified byte-identical dumps before and
+  after.
 
 - **2026-09-18 — Phase 3 follow-up: extracted `writeToCache`.** Pulled
   the two `std::copy` calls writing `k`/`v` into their caches into a
