@@ -7,10 +7,10 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 Phase 2 (C++ skeleton: parses the `.bin` header, prints config) is done;
 Phase 3 (forward pass) is in progress — one full layer's forward pass
 (RMSNorm → Q/K/V → RoPE → attention → `wo` → residual → RMSNorm → SwiGLU
-FFN → residual) now runs end to end for layer 0 / token 1 / pos 0. GQA
-assumptions are still open per the TODOs in `main.cpp`, plus a newly
-found gap: `wo`'s matmul isn't offset by layer yet, unlike every other
-per-layer weight. Final norm, the classifier head, and the layer loop
+FFN → residual) now runs end to end for layer 0 / token 1 / pos 0, every
+per-layer weight (including `wo`, fixed 2026-09-20) correctly offset by
+layer. GQA assumptions (`kv_dim` vs `dim`) are still open per the TODOs
+in `main.cpp`. Final norm, the classifier head, and the layer loop
 (multiple layers, multiple positions) are next.
 
 ## Phase checklist
@@ -39,6 +39,17 @@ per-layer weight. Final norm, the classifier head, and the layer loop
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-20 — Phase 3 follow-up: fixed `wo`'s missing layer offset,
+  comment/param fixes.** `w.wo`'s matmul now uses `+ kqvOffset`, same
+  stride as `wq`/`wk`/`wv` (matches `run.c`'s `w->wo + l*dim*dim`) —
+  closes the gap flagged 2026-09-19. Also fixed `matmul`'s comment (was
+  backwards: it had `d`/`n` swapped relative to what the code actually
+  does) and `swiGLU` now writes through its `out` parameter instead of
+  silently mutating `hb` regardless of what's passed as `out` — safe
+  since the call site aliases `out`/`hb` to the same buffer, but the
+  function itself is honest about it now. All dumps still byte-identical
+  to before, as expected at `layer=0` (`kqvOffset` is `0`).
 
 - **2026-09-19 — Phase 3: `wo` residual fix, SwiGLU FFN, per-layer
   weight offsets, eps moved inside `rmsNorm`.** Fixed a real bug: the

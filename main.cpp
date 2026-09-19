@@ -208,8 +208,8 @@ void rmsNorm(float* x, float* g, const int dim, float* out) {
 
 // this is a d * n matrix by n * 1 matrix multiplication. End result is d * 1
 // DISCLAIMER: if the same buffer is passed as both out and x, matmul will be corrupted
-// n = number of weights in w
-// d = dimension of each weight, also equal to dimension of x
+// d = number of weights in w, also equal to out's dimension
+// n = dimension of each weight in w, also equal to dimension of x
 void matmul(float* out, const float* x, const float* w, int n, int d) {
     for (int i = 0; i < d; i++) {
         float acc = 0;
@@ -276,7 +276,7 @@ float sigmoid(float v) {
 
 void swiGLU(float* out, float* hb, float* hb2, int len) {
     for (int i = 0; i < len; i++) {
-        hb[i] = hb[i] * sigmoid(hb[i]) * hb2[i];
+        out[i] = hb[i] * sigmoid(hb[i]) * hb2[i];
     }
 }
 
@@ -422,7 +422,7 @@ int main() {
         std::cerr << "failed to dump data from s.xb to mine/att_xb.bin";
     }
 
-    matmul(s.xb2.data(), s.xb.data(), w.wo, config.dim, config.dim);
+    matmul(s.xb2.data(), s.xb.data(), w.wo + kqvOffset, config.dim, config.dim);
 
     if (dumpFloats("mine/att_xb2.bin", s.xb2.data(), config.dim) == false) {
         std::cerr << "failed to dump data from s.xb2 to mine/att_xb2.bin";
