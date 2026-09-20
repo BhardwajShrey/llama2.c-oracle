@@ -287,138 +287,138 @@ void forward(RunState& s, const Config& config, const Weights& w, int token_id, 
         std::cerr << "failed to dump data to mine/embeddings.bin";
     }
 
-    int layer {0};
-
-    rmsNorm(s.x.data(), w.att_norm + (layer * config.dim), config.dim, s.xb.data());
-    if (dumpFloats("mine/att_norm.bin", s.xb.data(), config.dim) == false) {
-        std::cerr << "failed to dump data to mine/att_norm.bin";
-    }
-
-    long long kqvOffset {layer * config.dim * config.dim};
-
-    matmul(s.q.data(), s.xb.data(), w.wq + kqvOffset, config.dim, config.dim);
-    if (dumpFloats("mine/matmul_wq.bin", s.q.data(), config.dim) == false) {
-        std::cerr << "failed to dump data to mine/matmul_wq.bin";
-    }
-
-    // TODO: n/d here should be kv_dim = (dim * n_kv_heads) / n_heads, not dim -- same
-    // GQA assumption as the wk/wv offsets in initWeights. Fix once attention block is done.
-    matmul(s.k.data(), s.xb.data(), w.wk + kqvOffset, config.dim, config.dim);
-    if (dumpFloats("mine/matmul_wk.bin", s.k.data(), config.dim) == false) {
-        std::cerr << "failed to dump data to mine/matmul_wk.bin";
-    }
-
-    matmul(s.v.data(), s.xb.data(), w.wv + kqvOffset, config.dim, config.dim);
-    if (dumpFloats("mine/matmul_wv.bin", s.v.data(), config.dim) == false) {
-        std::cerr << "failed to dump data to mine/matmul_wv.bin";
-    }
-
-    // ROPE for q and k, not v
-    rope(w.cos_table, w.sin_table, config, pos, s.q.data());
-    rope(w.cos_table, w.sin_table, config, pos, s.k.data());
-
-    // attention stage begins
-
-    // copy v and post rope k for layer 0 and pos 0 into caches
-    writeToCache(s.k.data(), s.key_cache.data(), layer, pos, config);
-    writeToCache(s.v.data(), s.value_cache.data(), layer, pos, config);
-
-    int head_dim {config.dim / config.n_heads};
-
-    for (int h = 0; h < config.n_heads; h++) {
-        // processing happens per head. each head fully computes its own scores before the next head starts. softmax and weighted sum will reside in this for loop only
-        int slice = h * head_dim;       // what index does the head begin at. slice = one head of len head_dim
-
-        // calculating score
-        for (int t = 0; t <= pos; t++) {
-            float* k_t = s.key_cache.data() + cacheOffset(layer, t, config) + slice;
-            float score = dot(s.q.data() + slice, k_t, head_dim) / sqrtf(head_dim);
-            s.att[t] = score;
+    for (int layer = 0; layer < config.n_layers; layer++) {
+        rmsNorm(s.x.data(), w.att_norm + (layer * config.dim), config.dim, s.xb.data());
+        if (dumpFloats("mine/att_norm.bin", s.xb.data(), config.dim) == false) {
+            std::cerr << "failed to dump data to mine/att_norm.bin";
         }
 
-        // softmax over 0..pos
-        // involves four passes over att
-        // first pass
-        float max_att = INT_MIN;
-        for (int i = 0; i <= pos; i++) {
-            if (s.att[i] >= max_att) {
-                max_att = s.att[i];
+        long long kqvOffset {layer * config.dim * config.dim};
+
+        matmul(s.q.data(), s.xb.data(), w.wq + kqvOffset, config.dim, config.dim);
+        if (dumpFloats("mine/matmul_wq.bin", s.q.data(), config.dim) == false) {
+            std::cerr << "failed to dump data to mine/matmul_wq.bin";
+        }
+
+        // TODO: n/d here should be kv_dim = (dim * n_kv_heads) / n_heads, not dim -- same
+        // GQA assumption as the wk/wv offsets in initWeights. Fix once attention block is done.
+        matmul(s.k.data(), s.xb.data(), w.wk + kqvOffset, config.dim, config.dim);
+        if (dumpFloats("mine/matmul_wk.bin", s.k.data(), config.dim) == false) {
+            std::cerr << "failed to dump data to mine/matmul_wk.bin";
+        }
+
+        matmul(s.v.data(), s.xb.data(), w.wv + kqvOffset, config.dim, config.dim);
+        if (dumpFloats("mine/matmul_wv.bin", s.v.data(), config.dim) == false) {
+            std::cerr << "failed to dump data to mine/matmul_wv.bin";
+        }
+
+        // ROPE for q and k, not v
+        rope(w.cos_table, w.sin_table, config, pos, s.q.data());
+        rope(w.cos_table, w.sin_table, config, pos, s.k.data());
+
+        // attention stage begins
+
+        // copy v and post rope k for layer 0 and pos 0 into caches
+        writeToCache(s.k.data(), s.key_cache.data(), layer, pos, config);
+        writeToCache(s.v.data(), s.value_cache.data(), layer, pos, config);
+
+        int head_dim {config.dim / config.n_heads};
+
+        for (int h = 0; h < config.n_heads; h++) {
+            // processing happens per head. each head fully computes its own scores before the next head starts. softmax and weighted sum will reside in this for loop only
+            int slice = h * head_dim;       // what index does the head begin at. slice = one head of len head_dim
+
+            // calculating score
+            for (int t = 0; t <= pos; t++) {
+                float* k_t = s.key_cache.data() + cacheOffset(layer, t, config) + slice;
+                float score = dot(s.q.data() + slice, k_t, head_dim) / sqrtf(head_dim);
+                s.att[t] = score;
+            }
+
+            // softmax over 0..pos
+            // involves four passes over att
+            // first pass
+            float max_att = INT_MIN;
+            for (int i = 0; i <= pos; i++) {
+                if (s.att[i] >= max_att) {
+                    max_att = s.att[i];
+                }
+            }
+
+            // second pass. third pass sums up all the values. adding it here only
+            float sum_att {0};
+            for (int i = 0; i <= pos; i++) {
+                s.att[i] = expf(s.att[i] - max_att);
+                sum_att += s.att[i];
+            }
+
+            // final pass
+            for (int i = 0; i <= pos; i++) {
+                s.att[i] /= sum_att;
+            }
+
+            // weighted sum
+            // zero the output slice (re-use xb used for rms earlier)
+            for (int i = 0; i < head_dim; i++) {
+                s.xb[slice + i] = 0;
+            }
+
+            for (int t = 0; t <= pos; t++) {
+                float* v_t = s.value_cache.data() + cacheOffset(layer, t, config) + slice;
+
+                for (int d = 0; d < head_dim; d++) {
+                    s.xb[slice + d] += (s.att[t] * v_t[d]);
+                }
             }
         }
 
-        // second pass. third pass sums up all the values. adding it here only
-        float sum_att {0};
-        for (int i = 0; i <= pos; i++) {
-            s.att[i] = expf(s.att[i] - max_att);
-            sum_att += s.att[i];
+        if (dumpFloats("mine/att_xb.bin", s.xb.data(), config.dim) == false) {
+            std::cerr << "failed to dump data from s.xb to mine/att_xb.bin";
         }
 
-        // final pass
-        for (int i = 0; i <= pos; i++) {
-            s.att[i] /= sum_att;
+        matmul(s.xb2.data(), s.xb.data(), w.wo + kqvOffset, config.dim, config.dim);
+
+        if (dumpFloats("mine/att_xb2.bin", s.xb2.data(), config.dim) == false) {
+            std::cerr << "failed to dump data from s.xb2 to mine/att_xb2.bin";
         }
 
-        // weighted sum
-        // zero the output slice (re-use xb used for rms earlier)
-        for (int i = 0; i < head_dim; i++) {
-            s.xb[slice + i] = 0;
+        for (int i = 0; i < config.dim; i++) {
+            s.x[i] += s.xb2[i];
         }
 
-        for (int t = 0; t <= pos; t++) {
-            float* v_t = s.value_cache.data() + cacheOffset(layer, t, config) + slice;
+        // Attention ends
 
-            for (int d = 0; d < head_dim; d++) {
-                s.xb[slice + d] += (s.att[t] * v_t[d]);
-            }
+        // FEED FORWARD BEGINS
+        // w1 and w3 are dim * hidden_dim matrices. w2 is hidden_dim * dim
+        long long w1w3offset {layer * config.dim * config.hidden_dim};
+        long long w2offset   {layer * config.hidden_dim * config.dim};      // yeah yeah its the same as w1w3offset, this is more about the principle
+
+        rmsNorm(s.x.data(), w.ffn_norm + (layer * config.dim), config.dim, s.xb.data());
+        if (dumpFloats("mine/ffn_norm.bin", s.xb.data(), config.dim) == false) {
+            std::cerr << "failed to dump data from s.xb to mine/ffn_norm.bin";
         }
-    }
 
-    if (dumpFloats("mine/att_xb.bin", s.xb.data(), config.dim) == false) {
-        std::cerr << "failed to dump data from s.xb to mine/att_xb.bin";
-    }
+        matmul(s.hb.data(), s.xb.data(), w.w1 + w1w3offset, config.dim, config.hidden_dim);          // dim -> hidden_dim
+        if (dumpFloats("mine/ffn_w1.bin", s.hb.data(), config.hidden_dim) == false) {
+            std::cerr << "failed to dump data from s.hb to mine/ffn_w1.bin";
+        }
 
-    matmul(s.xb2.data(), s.xb.data(), w.wo + kqvOffset, config.dim, config.dim);
+        matmul(s.hb2.data(), s.xb.data(), w.w3 + w1w3offset, config.dim, config.hidden_dim);         // dim -> hidden_dim
+        if (dumpFloats("mine/ffn_w3.bin", s.hb2.data(), config.hidden_dim) == false) {
+            std::cerr << "failed to dump data from s.hb2 to mine/ffn_w3.bin";
+        }
 
-    if (dumpFloats("mine/att_xb2.bin", s.xb2.data(), config.dim) == false) {
-        std::cerr << "failed to dump data from s.xb2 to mine/att_xb2.bin";
-    }
+        swiGLU(s.hb.data(), s.hb.data(), s.hb2.data(), config.hidden_dim);                           // elementwise, 768 floats
+        
+        std::vector<float> out(config.dim);
+        matmul(out.data(), s.hb.data(), w.w2 + w2offset, config.hidden_dim, config.dim);
+        if (dumpFloats("mine/ffn_w2.bin", out.data(), config.dim) == false) {
+            std::cerr << "failed to dump data from out to mine/ffn_w2.bin";
+        }
 
-    for (int i = 0; i < config.dim; i++) {
-        s.x[i] += s.xb2[i];
-    }
-
-    // Attention ends
-
-    // FEED FORWARD BEGINS
-    // w1 and w3 are dim * hidden_dim matrices. w2 is hidden_dim * dim
-    long long w1w3offset {layer * config.dim * config.hidden_dim};
-    long long w2offset   {layer * config.hidden_dim * config.dim};      // yeah yeah its the same as w1w3offset, this is more about the principle
-
-    rmsNorm(s.x.data(), w.ffn_norm + (layer * config.dim), config.dim, s.xb.data());
-    if (dumpFloats("mine/ffn_norm.bin", s.xb.data(), config.dim) == false) {
-        std::cerr << "failed to dump data from s.xb to mine/ffn_norm.bin";
-    }
-
-    matmul(s.hb.data(), s.xb.data(), w.w1 + w1w3offset, config.dim, config.hidden_dim);          // dim -> hidden_dim
-    if (dumpFloats("mine/ffn_w1.bin", s.hb.data(), config.hidden_dim) == false) {
-        std::cerr << "failed to dump data from s.hb to mine/ffn_w1.bin";
-    }
-
-    matmul(s.hb2.data(), s.xb.data(), w.w3 + w1w3offset, config.dim, config.hidden_dim);         // dim -> hidden_dim
-    if (dumpFloats("mine/ffn_w3.bin", s.hb2.data(), config.hidden_dim) == false) {
-        std::cerr << "failed to dump data from s.hb2 to mine/ffn_w3.bin";
-    }
-
-    swiGLU(s.hb.data(), s.hb.data(), s.hb2.data(), config.hidden_dim);                           // elementwise, 768 floats
-    
-    std::vector<float> out(config.dim);
-    matmul(out.data(), s.hb.data(), w.w2 + w2offset, config.hidden_dim, config.dim);
-    if (dumpFloats("mine/ffn_w2.bin", out.data(), config.dim) == false) {
-        std::cerr << "failed to dump data from out to mine/ffn_w2.bin";
-    }
-
-    for (int i = 0; i < config.dim; i++) {
-        s.x[i] += out[i];
+        for (int i = 0; i < config.dim; i++) {
+            s.x[i] += out[i];
+        }
     }
 }
 

@@ -5,13 +5,14 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 ## Status
 
 Phase 2 (C++ skeleton: parses the `.bin` header, prints config) is done;
-Phase 3 (forward pass) is in progress — one full layer's forward pass
-(RMSNorm → Q/K/V → RoPE → attention → `wo` → residual → RMSNorm → SwiGLU
-FFN → residual) now runs end to end for layer 0 / token 1 / pos 0, every
-per-layer weight (including `wo`, fixed 2026-09-20) correctly offset by
-layer. GQA assumptions (`kv_dim` vs `dim`) are still open per the TODOs
-in `main.cpp`. Final norm, the classifier head, and the layer loop
-(multiple layers, multiple positions) are next.
+Phase 3 (forward pass) is in progress — the per-layer body now runs
+inside `for (layer = 0; layer < config.n_layers; layer++)`, so all 6
+layers execute for token 1 / pos 0. GQA assumptions (`kv_dim` vs `dim`)
+are still open per the TODOs in `main.cpp`. **Known issue:** every
+`dumpFloats` call inside the loop writes to a fixed filename, so
+`mine/*.bin` now holds layer 5's values, not layer 0's, breaking the
+correspondence with `dumps/layers.0.*.npy` — fix next. Final norm and
+the classifier head are also still missing.
 
 ## Phase checklist
 
@@ -27,9 +28,10 @@ in `main.cpp`. Final norm, the classifier head, and the layer loop
       the config.
 - [ ] **Phase 3 (in progress) — forward pass.** Implement the actual
       transformer forward pass in the from-scratch C++ engine, validate
-      against the oracle. One full layer done end to end (attention +
-      `wo` + residual + SwiGLU FFN + residual) for layer 0/token 1/pos 0;
-      final norm, classifier head, and the layer loop remain.
+      against the oracle. Layer loop now runs all 6 layers for token
+      1/pos 0; per-layer dumps need a layer-indexed filename before
+      multi-layer output can be verified against the oracle; final norm
+      and classifier head remain.
 - [ ] **Phase 4 — optimization.** SIMD, cache-aware matmul, quantization,
       threading — the actual point of the project. Every change measured
       before/after per `BENCHMARKS.md`.
@@ -39,6 +41,22 @@ in `main.cpp`. Final norm, the classifier head, and the layer loop
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-21 — Phase 3: bumped the layer loop to `config.n_layers`.**
+  Second half of the two-step plan: `int layer {0};` became
+  `for (int layer = 0; layer < config.n_layers; layer++)`, wrapping the
+  same body with no other changes — confirmed via a whitespace-ignoring
+  diff against the previous commit that nothing inside the loop was
+  altered, only the declaration/wrapper. Builds clean, runs to
+  completion with no NaNs (spot-checked `att_norm.bin`). **Found while
+  reviewing:** every `dumpFloats` call inside the loop targets a fixed
+  filename (`mine/att_norm.bin`, etc.), so across 6 iterations each file
+  gets overwritten 6 times — the file left on disk after the run holds
+  layer 5's values, not layer 0's, silently breaking the correspondence
+  with `oracle.py`'s per-layer dumps (`dumps/layers.0.*.npy`,
+  `dumps/layers.1.*.npy`, ...). `s.x` itself is unaffected — it correctly
+  carries state across all 6 layers — this only breaks the *intermediate*
+  dumps used for oracle comparison. Not yet fixed.
 
 - **2026-09-21 — Phase 3: extracted `forward()`.** Pulled the entire
   embedding-lookup + single-layer body out of `main()` into
