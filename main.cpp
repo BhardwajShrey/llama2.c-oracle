@@ -280,59 +280,14 @@ void swiGLU(float* out, float* hb, float* hb2, int len) {
     }
 }
 
-int main() {
-    int fd = open(filename, O_RDONLY);
-    if (fd == -1) {
-        std::perror(filename);
-        return 1;
-    }
-
-    struct stat st;
-    if (fstat(fd, &st) != 0) {
-        close(fd);
-        std::cerr << "Error running fstat on: " << filename << ", with fd: " << fd << "\n";
-        return 1;
-    }
-
-    void* data = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
-    close(fd);
-    if (data == MAP_FAILED) {
-        std::cerr << "mmap on filename: " << filename << ", failed.\n";
-        return 1;
-    }
-
-    Config config {};
-    bool sharedWeights {};
-
-    readConfig(data, config, sharedWeights);
-    
-    print_config(config, sharedWeights); 
-
-    long long fileSizeExpected = expected_file_size(config);
-    long long fileSizeActual = st.st_size;
-
-    std::cout << "expected: " << fileSizeExpected << "\n";
-    std::cout << "actual:   " << fileSizeActual << "\n";
-    std::cout << "gap:      " << fileSizeActual - fileSizeExpected << " bytes = "
-            << (fileSizeActual - fileSizeExpected) / 4 << " floats\n";
-
-    Weights w {};
-
-    initWeights(config, w, data, sharedWeights);
-
-    // printFirstN("tok_embeddings", w.tok_embeddings);
-    // printFirstN("wq", w.wq);
-
-    RunState s = createRunState(config);
-
-    // some sane defaults. For testing
-    int token_id {1}, layer {0}, pos {0};
-
+void forward(RunState& s, const Config& config, const Weights& w, int token_id, int pos) {
     getTokEmbedding(w, s.x.data(), token_id, config.dim);
 
     if (dumpFloats("mine/embeddings.bin", s.x.data(), config.dim) == false) {
         std::cerr << "failed to dump data to mine/embeddings.bin";
     }
+
+    int layer {0};
 
     rmsNorm(s.x.data(), w.att_norm + (layer * config.dim), config.dim, s.xb.data());
     if (dumpFloats("mine/att_norm.bin", s.xb.data(), config.dim) == false) {
@@ -465,6 +420,57 @@ int main() {
     for (int i = 0; i < config.dim; i++) {
         s.x[i] += out[i];
     }
+}
+
+int main() {
+    int fd = open(filename, O_RDONLY);
+    if (fd == -1) {
+        std::perror(filename);
+        return 1;
+    }
+
+    struct stat st;
+    if (fstat(fd, &st) != 0) {
+        close(fd);
+        std::cerr << "Error running fstat on: " << filename << ", with fd: " << fd << "\n";
+        return 1;
+    }
+
+    void* data = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    close(fd);
+    if (data == MAP_FAILED) {
+        std::cerr << "mmap on filename: " << filename << ", failed.\n";
+        return 1;
+    }
+
+    Config config {};
+    bool sharedWeights {};
+
+    readConfig(data, config, sharedWeights);
+    
+    print_config(config, sharedWeights); 
+
+    long long fileSizeExpected = expected_file_size(config);
+    long long fileSizeActual = st.st_size;
+
+    std::cout << "expected: " << fileSizeExpected << "\n";
+    std::cout << "actual:   " << fileSizeActual << "\n";
+    std::cout << "gap:      " << fileSizeActual - fileSizeExpected << " bytes = "
+            << (fileSizeActual - fileSizeExpected) / 4 << " floats\n";
+
+    Weights w {};
+
+    initWeights(config, w, data, sharedWeights);
+
+    // printFirstN("tok_embeddings", w.tok_embeddings);
+    // printFirstN("wq", w.wq);
+
+    RunState s = createRunState(config);
+
+    // some sane defaults. For testing
+    int token_id {1}, pos {0};
+
+    forward(s, config, w, token_id, pos);
 
     munmap(data, st.st_size);
 

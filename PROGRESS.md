@@ -40,6 +40,20 @@ in `main.cpp`. Final norm, the classifier head, and the layer loop
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-09-21 — Phase 3: extracted `forward()`.** Pulled the entire
+  embedding-lookup + single-layer body out of `main()` into
+  `forward(RunState& s, const Config& config, const Weights& w, int
+  token_id, int pos)`; `main()` now shrinks to setup, one `forward()`
+  call, and cleanup. `layer` is still a fixed local (`int layer {0};`),
+  not a loop — this commit is the extraction only, kept deliberately
+  separate from bumping the loop bound to `config.n_layers` so each step
+  can be verified independently. Verified all 11 `mine/*.bin` dumps
+  byte-identical against the previous commit's output before committing.
+  (A previous attempt combined the extraction and the loop-bound bump in
+  one uncommitted change and silently dropped the final-norm/classifier
+  step the plan called for; that attempt was discarded via local
+  `git reset --hard` before it was ever pushed.)
+
 - **2026-09-20 — Phase 3 follow-up: fixed `wo`'s missing layer offset,
   comment/param fixes.** `w.wo`'s matmul now uses `+ kqvOffset`, same
   stride as `wq`/`wk`/`wv` (matches `run.c`'s `w->wo + l*dim*dim`) —
