@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -288,28 +289,34 @@ void forward(RunState& s, const Config& config, const Weights& w, int token_id, 
     }
 
     for (int layer = 0; layer < config.n_layers; layer++) {
+        std::string layerSuffix {"_layer_" + std::to_string(layer) + ".bin"};
+
         rmsNorm(s.x.data(), w.att_norm + (layer * config.dim), config.dim, s.xb.data());
-        if (dumpFloats("mine/att_norm.bin", s.xb.data(), config.dim) == false) {
-            std::cerr << "failed to dump data to mine/att_norm.bin";
+        std::string attNormPath {"mine/att_norm" + layerSuffix};
+        if (dumpFloats(attNormPath.c_str(), s.xb.data(), config.dim) == false) {
+            std::cerr << "failed to dump data to " << attNormPath;
         }
 
         long long kqvOffset {layer * config.dim * config.dim};
 
         matmul(s.q.data(), s.xb.data(), w.wq + kqvOffset, config.dim, config.dim);
-        if (dumpFloats("mine/matmul_wq.bin", s.q.data(), config.dim) == false) {
-            std::cerr << "failed to dump data to mine/matmul_wq.bin";
+        std::string matmulWqPath {"mine/matmul_wq" + layerSuffix};
+        if (dumpFloats(matmulWqPath.c_str(), s.q.data(), config.dim) == false) {
+            std::cerr << "failed to dump data to " << matmulWqPath;
         }
 
         // TODO: n/d here should be kv_dim = (dim * n_kv_heads) / n_heads, not dim -- same
         // GQA assumption as the wk/wv offsets in initWeights. Fix once attention block is done.
         matmul(s.k.data(), s.xb.data(), w.wk + kqvOffset, config.dim, config.dim);
-        if (dumpFloats("mine/matmul_wk.bin", s.k.data(), config.dim) == false) {
-            std::cerr << "failed to dump data to mine/matmul_wk.bin";
+        std::string matmulWkPath {"mine/matmul_wk" + layerSuffix};
+        if (dumpFloats(matmulWkPath.c_str(), s.k.data(), config.dim) == false) {
+            std::cerr << "failed to dump data to " << matmulWkPath;
         }
 
         matmul(s.v.data(), s.xb.data(), w.wv + kqvOffset, config.dim, config.dim);
-        if (dumpFloats("mine/matmul_wv.bin", s.v.data(), config.dim) == false) {
-            std::cerr << "failed to dump data to mine/matmul_wv.bin";
+        std::string matmulWvPath {"mine/matmul_wv" + layerSuffix};
+        if (dumpFloats(matmulWvPath.c_str(), s.v.data(), config.dim) == false) {
+            std::cerr << "failed to dump data to " << matmulWvPath;
         }
 
         // ROPE for q and k, not v
@@ -372,14 +379,16 @@ void forward(RunState& s, const Config& config, const Weights& w, int token_id, 
             }
         }
 
-        if (dumpFloats("mine/att_xb.bin", s.xb.data(), config.dim) == false) {
-            std::cerr << "failed to dump data from s.xb to mine/att_xb.bin";
+        std::string attXbPath {"mine/att_xb" + layerSuffix};
+        if (dumpFloats(attXbPath.c_str(), s.xb.data(), config.dim) == false) {
+            std::cerr << "failed to dump data from s.xb to " << attXbPath;
         }
 
         matmul(s.xb2.data(), s.xb.data(), w.wo + kqvOffset, config.dim, config.dim);
 
-        if (dumpFloats("mine/att_xb2.bin", s.xb2.data(), config.dim) == false) {
-            std::cerr << "failed to dump data from s.xb2 to mine/att_xb2.bin";
+        std::string attXb2Path {"mine/att_xb2" + layerSuffix};
+        if (dumpFloats(attXb2Path.c_str(), s.xb2.data(), config.dim) == false) {
+            std::cerr << "failed to dump data from s.xb2 to " << attXb2Path;
         }
 
         for (int i = 0; i < config.dim; i++) {
@@ -394,26 +403,30 @@ void forward(RunState& s, const Config& config, const Weights& w, int token_id, 
         long long w2offset   {layer * config.hidden_dim * config.dim};      // yeah yeah its the same as w1w3offset, this is more about the principle
 
         rmsNorm(s.x.data(), w.ffn_norm + (layer * config.dim), config.dim, s.xb.data());
-        if (dumpFloats("mine/ffn_norm.bin", s.xb.data(), config.dim) == false) {
-            std::cerr << "failed to dump data from s.xb to mine/ffn_norm.bin";
+        std::string ffnNormPath {"mine/ffn_norm" + layerSuffix};
+        if (dumpFloats(ffnNormPath.c_str(), s.xb.data(), config.dim) == false) {
+            std::cerr << "failed to dump data from s.xb to " << ffnNormPath;
         }
 
         matmul(s.hb.data(), s.xb.data(), w.w1 + w1w3offset, config.dim, config.hidden_dim);          // dim -> hidden_dim
-        if (dumpFloats("mine/ffn_w1.bin", s.hb.data(), config.hidden_dim) == false) {
-            std::cerr << "failed to dump data from s.hb to mine/ffn_w1.bin";
+        std::string ffnW1Path {"mine/ffn_w1" + layerSuffix};
+        if (dumpFloats(ffnW1Path.c_str(), s.hb.data(), config.hidden_dim) == false) {
+            std::cerr << "failed to dump data from s.hb to " << ffnW1Path;
         }
 
         matmul(s.hb2.data(), s.xb.data(), w.w3 + w1w3offset, config.dim, config.hidden_dim);         // dim -> hidden_dim
-        if (dumpFloats("mine/ffn_w3.bin", s.hb2.data(), config.hidden_dim) == false) {
-            std::cerr << "failed to dump data from s.hb2 to mine/ffn_w3.bin";
+        std::string ffnW3Path {"mine/ffn_w3" + layerSuffix};
+        if (dumpFloats(ffnW3Path.c_str(), s.hb2.data(), config.hidden_dim) == false) {
+            std::cerr << "failed to dump data from s.hb2 to " << ffnW3Path;
         }
 
         swiGLU(s.hb.data(), s.hb.data(), s.hb2.data(), config.hidden_dim);                           // elementwise, 768 floats
-        
+
         std::vector<float> out(config.dim);
         matmul(out.data(), s.hb.data(), w.w2 + w2offset, config.hidden_dim, config.dim);
-        if (dumpFloats("mine/ffn_w2.bin", out.data(), config.dim) == false) {
-            std::cerr << "failed to dump data from out to mine/ffn_w2.bin";
+        std::string ffnW2Path {"mine/ffn_w2" + layerSuffix};
+        if (dumpFloats(ffnW2Path.c_str(), out.data(), config.dim) == false) {
+            std::cerr << "failed to dump data from out to " << ffnW2Path;
         }
 
         for (int i = 0; i < config.dim; i++) {

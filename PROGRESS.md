@@ -7,12 +7,12 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 Phase 2 (C++ skeleton: parses the `.bin` header, prints config) is done;
 Phase 3 (forward pass) is in progress — the per-layer body now runs
 inside `for (layer = 0; layer < config.n_layers; layer++)`, so all 6
-layers execute for token 1 / pos 0. GQA assumptions (`kv_dim` vs `dim`)
-are still open per the TODOs in `main.cpp`. **Known issue:** every
-`dumpFloats` call inside the loop writes to a fixed filename, so
-`mine/*.bin` now holds layer 5's values, not layer 0's, breaking the
-correspondence with `dumps/layers.0.*.npy` — fix next. Final norm and
-the classifier head are also still missing.
+layers execute for token 1 / pos 0, and every per-layer `dumpFloats`
+call now writes a layer-indexed filename (e.g. `att_norm_layer_0.bin`
+… `_layer_5.bin`) instead of overwriting one fixed name — the
+2026-09-21 dump-clobbering issue is fixed. GQA assumptions (`kv_dim` vs
+`dim`) are still open per the TODOs in `main.cpp`. Final norm and the
+classifier head are still missing.
 
 ## Phase checklist
 
@@ -28,10 +28,9 @@ the classifier head are also still missing.
       the config.
 - [ ] **Phase 3 (in progress) — forward pass.** Implement the actual
       transformer forward pass in the from-scratch C++ engine, validate
-      against the oracle. Layer loop now runs all 6 layers for token
-      1/pos 0; per-layer dumps need a layer-indexed filename before
-      multi-layer output can be verified against the oracle; final norm
-      and classifier head remain.
+      against the oracle. Layer loop runs all 6 layers for token 1/pos 0,
+      with layer-indexed per-layer dumps; final norm and classifier head
+      remain.
 - [ ] **Phase 4 — optimization.** SIMD, cache-aware matmul, quantization,
       threading — the actual point of the project. Every change measured
       before/after per `BENCHMARKS.md`.
@@ -41,6 +40,19 @@ the classifier head are also still missing.
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-21 — Phase 3 follow-up: layer-indexed dump filenames.**
+  Every `dumpFloats` call inside the layer loop now builds its path with
+  a `layerSuffix` (`"_layer_" + std::to_string(layer) + ".bin"`) instead
+  of a fixed name — `mine/att_norm_layer_0.bin` … `_layer_5.bin`, and
+  likewise for `matmul_wq/wk/wv`, `att_xb`/`att_xb2`, and
+  `ffn_norm`/`ffn_w1`/`ffn_w2`/`ffn_w3`. Fixes the dump-clobbering issue
+  found earlier today: verified the new `_layer_5` file for each dump
+  point is byte-identical to what the old fixed-filename version left
+  behind (since layer 5 ran last and always won the overwrite),
+  confirming this change only affects where output lands, not what's
+  computed. `<string>` added to includes rather than relying on
+  transitive inclusion.
 
 - **2026-09-21 — Phase 3: bumped the layer loop to `config.n_layers`.**
   Second half of the two-step plan: `int layer {0};` became
