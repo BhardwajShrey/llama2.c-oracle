@@ -433,6 +433,15 @@ void forward(RunState& s, const Config& config, const Weights& w, int token_id, 
             s.x[i] += out[i];
         }
     }
+
+    rmsNorm(s.x.data(), w.final_norm, config.dim, s.x.data());
+    if (dumpFloats("mine/norm.bin", s.x.data(), config.dim) == false) {
+        std::cout << "failed to dump data from s.x to mine/norm.bin";
+    }
+
+    // argmax of this next matmul output will be the next token being predicted. Token corresponding to maxIndex, that is
+    matmul(s.logits.data(), s.x.data(), w.output, config.dim, config.vocab_size);
+    long long maxIndex = std::max_element(s.logits.begin(), s.logits.end()) - s.logits.begin();
 }
 
 int main() {

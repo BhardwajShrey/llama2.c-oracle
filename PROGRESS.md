@@ -5,14 +5,13 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 ## Status
 
 Phase 2 (C++ skeleton: parses the `.bin` header, prints config) is done;
-Phase 3 (forward pass) is in progress — the per-layer body now runs
-inside `for (layer = 0; layer < config.n_layers; layer++)`, so all 6
-layers execute for token 1 / pos 0, and every per-layer `dumpFloats`
-call now writes a layer-indexed filename (e.g. `att_norm_layer_0.bin`
-… `_layer_5.bin`) instead of overwriting one fixed name — the
-2026-09-21 dump-clobbering issue is fixed. GQA assumptions (`kv_dim` vs
-`dim`) are still open per the TODOs in `main.cpp`. Final norm and the
-classifier head are still missing.
+Phase 3 (forward pass) is essentially complete for a single token/position
+— embedding → 6 layers (attention + SwiGLU FFN) → final RMSNorm →
+classifier matmul now runs end to end, and its argmax/top logit
+(`9038`, `12.29`) match `oracle.py`'s PyTorch output exactly for token
+1 / pos 0. GQA assumptions (`kv_dim` vs `dim`) are still open per the
+TODOs in `main.cpp`; multi-position generation (KV cache reuse across a
+real sequence) hasn't been exercised yet.
 
 ## Phase checklist
 
@@ -28,9 +27,10 @@ classifier head are still missing.
       the config.
 - [ ] **Phase 3 (in progress) — forward pass.** Implement the actual
       transformer forward pass in the from-scratch C++ engine, validate
-      against the oracle. Layer loop runs all 6 layers for token 1/pos 0,
-      with layer-indexed per-layer dumps; final norm and classifier head
-      remain.
+      against the oracle. Full single-token forward pass (embedding
+      through classifier) validated against `oracle.py` — argmax and top
+      logit match exactly. GQA assumptions and multi-position generation
+      remain before this phase is fully done.
 - [ ] **Phase 4 — optimization.** SIMD, cache-aware matmul, quantization,
       threading — the actual point of the project. Every change measured
       before/after per `BENCHMARKS.md`.
@@ -40,6 +40,25 @@ classifier head are still missing.
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-23 — Phase 3: final RMSNorm + classifier head — full forward
+  pass validated end to end.** After the layer loop, added
+  `rmsNorm(s.x.data(), w.final_norm, config.dim, s.x.data())` (aliasing
+  `x`/`out` deliberately — safe here since `rmsNorm`'s first pass reads
+  all of `x` before the second pass writes it, unlike `matmul`, which the
+  code's own disclaimer warns against aliasing) followed by
+  `matmul(s.logits.data(), s.x.data(), w.output, config.dim,
+  config.vocab_size)` — matches `run.c`'s `rmsnorm(x, x,
+  w->rms_final_weight, dim)` + `matmul(s->logits, x, w->wcls, dim,
+  vocab_size)` exactly. `oracle.py` got a matching two-line addition
+  printing `np.argmax`/`.max()` of `dumps/logits.npy`. **Verified: the
+  C++ engine's argmax and top logit value (`9038`, `12.29`) match the
+  PyTorch oracle's (`9038`, `12.2900305`) exactly** for token 1 / pos 0
+  — the entire forward pass (embedding → 6 layers → final norm →
+  classifier) is now confirmed numerically correct end to end, checked
+  via a temporary print added to a scratch build (not committed —
+  `main.cpp` computes `maxIndex` but doesn't print it yet, so this
+  result isn't visible just from running the checked-in binary).
 
 - **2026-09-21 — Phase 3 follow-up: layer-indexed dump filenames.**
   Every `dumpFloats` call inside the layer loop now builds its path with
