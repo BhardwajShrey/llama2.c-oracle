@@ -774,6 +774,9 @@ void generate(Transformer *transformer, Tokenizer *tokenizer, Sampler *sampler, 
         // data-dependent terminating condition: the BOS (=1) token delimits sequences
         if (next == 1) { break; }
 
+        // next line will print token_id, placed purely for debugging.
+        // printf("%d ", next);
+
         // print the token as string, decode it with the Tokenizer object
         char* piece = decode(tokenizer, token, next);
         safe_printf(piece); // same as printf("%s", piece), but skips "unsafe" bytes

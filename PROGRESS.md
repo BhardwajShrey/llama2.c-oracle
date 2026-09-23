@@ -4,14 +4,13 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 
 ## Status
 
-Phase 2 (C++ skeleton: parses the `.bin` header, prints config) is done;
-Phase 3 (forward pass) is essentially complete for a single token/position
-— embedding → 6 layers (attention + SwiGLU FFN) → final RMSNorm →
-classifier matmul now runs end to end, and its argmax/top logit
-(`9038`, `12.29`) match `oracle.py`'s PyTorch output exactly for token
-1 / pos 0. GQA assumptions (`kv_dim` vs `dim`) are still open per the
-TODOs in `main.cpp`; multi-position generation (KV cache reuse across a
-real sequence) hasn't been exercised yet.
+Phase 3 (forward pass) is functionally complete — `main()` now runs a
+real 10-step greedy generation loop (embed → 6 layers → final norm →
+classifier → argmax → feed back in as next token), and the resulting
+token sequence matches PyTorch's greedy generation exactly, token for
+token. GQA assumptions (`kv_dim` vs `dim`) are still open per the TODOs
+in `main.cpp`; the per-layer `mine/*.bin` dumps are only valid for the
+last position run (see Log) since they aren't position-indexed yet.
 
 ## Phase checklist
 
@@ -25,12 +24,11 @@ real sequence) hasn't been exercised yet.
       actually catches a deliberate corruption.
 - [x] **Phase 2 — C++ skeleton.** Parse the `.bin` checkpoint header, print
       the config.
-- [ ] **Phase 3 (in progress) — forward pass.** Implement the actual
-      transformer forward pass in the from-scratch C++ engine, validate
-      against the oracle. Full single-token forward pass (embedding
-      through classifier) validated against `oracle.py` — argmax and top
-      logit match exactly. GQA assumptions and multi-position generation
-      remain before this phase is fully done.
+- [x] **Phase 3 — forward pass.** Full 10-step greedy generation loop
+      (embed → 6 layers → final norm → classifier → argmax → feed back
+      in) validated against PyTorch's greedy generation — exact token
+      match. GQA (`kv_dim` vs `dim`) assumptions remain, tracked as
+      TODOs, not blocking since `stories15M`/`42M` don't exercise them.
 - [ ] **Phase 4 — optimization.** SIMD, cache-aware matmul, quantization,
       threading — the actual point of the project. Every change measured
       before/after per `BENCHMARKS.md`.
@@ -40,6 +38,40 @@ real sequence) hasn't been exercised yet.
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-23 — Phase 3: real generation loop, validated against
+  PyTorch.** Moved the classifier `matmul` + argmax out of `forward()`
+  (which now stops after the final RMSNorm) and into a
+  `for (pos = 0; pos < 10; pos++)` loop in `main()` that calls
+  `forward()`, computes logits from the result, argmaxes to get the next
+  token, prints it, and feeds it back in as `token_id` for the next
+  iteration — the actual autoregressive decoding loop, using the KV
+  cache and per-position RoPE that were built for exactly this. **Ran
+  the same greedy decode directly in PyTorch (10 steps from token 1,
+  argmax each time) and got an exact match**: `[9038, 2501, 263, 931,
+  29892, 727, 471, 263, 2217, 7826]` on both sides. This is the
+  strongest correctness signal so far — it exercises the KV cache across
+  10 real positions, not just position 0.
+
+  **Known regression, not yet fixed:** the per-layer `dumpFloats` calls
+  inside `forward()` are indexed by `layer` but not by `pos` — same bug
+  class as the 2026-09-21 layer-clobbering issue, just on a different
+  axis. After a 10-position run, `mine/att_norm_layer_0.bin` etc. hold
+  position 9's values, not position 0's, and `oracle.py` currently only
+  dumps a single-token (`pos=0`) forward pass, so there's no oracle
+  ground truth to compare later positions against yet even once this is
+  fixed.
+
+  Also noted, not fixed: `matmul`'s classifier call still relies on
+  `<algorithm>` being pulled in transitively for `std::max_element`
+  (same pattern as `sqrtf`/`abs`/`INT_MIN` before); the loop uses
+  `long long pos` while `forward()`'s parameter is `int pos` (harmless at
+  10, but an unnecessary type mismatch across the call); the loop bound
+  (`10`) is a hardcoded test value with no relation to `config.seq_len`
+  and no bounds check against it; and there's no early-stop on
+  predicting the BOS/EOS token (`run.c`'s `generate()` breaks on
+  `next == 1`) — minor since this is still a fixed-length test loop, not
+  the real CLI-facing entry point yet.
 
 - **2026-09-23 — Phase 3: final RMSNorm + classifier head — full forward
   pass validated end to end.** After the layer loop, added

@@ -438,10 +438,6 @@ void forward(RunState& s, const Config& config, const Weights& w, int token_id, 
     if (dumpFloats("mine/norm.bin", s.x.data(), config.dim) == false) {
         std::cout << "failed to dump data from s.x to mine/norm.bin";
     }
-
-    // argmax of this next matmul output will be the next token being predicted. Token corresponding to maxIndex, that is
-    matmul(s.logits.data(), s.x.data(), w.output, config.dim, config.vocab_size);
-    long long maxIndex = std::max_element(s.logits.begin(), s.logits.end()) - s.logits.begin();
 }
 
 int main() {
@@ -490,9 +486,18 @@ int main() {
     RunState s = createRunState(config);
 
     // some sane defaults. For testing
-    int token_id {1}, pos {0};
+    int token_id {1};
 
-    forward(s, config, w, token_id, pos);
+    // token_id 1 maps to BOS, so skipping printing for that
+
+    for (long long pos = 0; pos < 10; pos++) {
+        forward(s, config, w, token_id, pos);
+
+        // argmax of this next matmul output will be the next token being predicted
+        matmul(s.logits.data(), s.x.data(), w.output, config.dim, config.vocab_size);
+        token_id = std::max_element(s.logits.begin(), s.logits.end()) - s.logits.begin();
+        std::cout << token_id << " ";
+    }
 
     munmap(data, st.st_size);
 
