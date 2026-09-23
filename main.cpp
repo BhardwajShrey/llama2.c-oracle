@@ -7,7 +7,10 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-const char* filename = "out/stories15M.bin";
+#include "tokenizer.hpp"
+
+const char* filename  = "out/stories15M.bin";
+const char* tokenizer = "tokenizer.bin";
 
 struct Config {
     int dim;         // 288  - the width of x
@@ -211,6 +214,7 @@ void rmsNorm(float* x, float* g, const int dim, float* out) {
 // DISCLAIMER: if the same buffer is passed as both out and x, matmul will be corrupted
 // d = number of weights in w, also equal to out's dimension
 // n = dimension of each weight in w, also equal to dimension of x
+
 void matmul(float* out, const float* x, const float* w, int n, int d) {
     for (int i = 0; i < d; i++) {
         float acc = 0;
@@ -483,6 +487,8 @@ int main() {
     // printFirstN("tok_embeddings", w.tok_embeddings);
     // printFirstN("wq", w.wq);
 
+    Tokenizer t = createTokenizer("tokenizer.bin", config.vocab_size);
+
     RunState s = createRunState(config);
 
     // some sane defaults. For testing
@@ -490,14 +496,17 @@ int main() {
 
     // token_id 1 maps to BOS, so skipping printing for that
 
-    for (long long pos = 0; pos < 10; pos++) {
+    for (long long pos = 0; pos < config.seq_len; pos++) {
         forward(s, config, w, token_id, pos);
 
         // argmax of this next matmul output will be the next token being predicted
         matmul(s.logits.data(), s.x.data(), w.output, config.dim, config.vocab_size);
         token_id = std::max_element(s.logits.begin(), s.logits.end()) - s.logits.begin();
-        std::cout << token_id << " ";
+        // std::cout << "Decoding tok id: " << token_id << " at pos: " << pos << "\n";
+        std::cout << decodeToken(token_id, t);
     }
+
+    std::cout <<"\n\n";
 
     munmap(data, st.st_size);
 
