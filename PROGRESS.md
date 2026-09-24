@@ -4,13 +4,17 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 
 ## Status
 
-Phase 3 (forward pass) is functionally complete — `main()` now runs a
-real 10-step greedy generation loop (embed → 6 layers → final norm →
-classifier → argmax → feed back in as next token), and the resulting
-token sequence matches PyTorch's greedy generation exactly, token for
-token. GQA assumptions (`kv_dim` vs `dim`) are still open per the TODOs
-in `main.cpp`; the per-layer `mine/*.bin` dumps are only valid for the
-last position run (see Log) since they aren't position-indexed yet.
+Phase 3 (forward pass) is functionally complete, and generation now
+prints decoded text instead of raw token IDs — `tokenizer.hpp`/
+`tokenizer.cpp` read `tokenizer.bin` and decode each predicted token,
+and the loop runs for the full `config.seq_len` instead of a hardcoded
+10 steps. **However, a real heap-buffer-overflow was found in
+`createTokenizer()` while documenting this** (see Log, 2026-09-25) —
+today's coherent-looking story output is not proof of correctness, it's
+undefined behavior that hasn't misbehaved yet. GQA assumptions
+(`kv_dim` vs `dim`) are still open per the TODOs in `main.cpp`; the
+per-layer `mine/*.bin` dumps are still only valid for the last
+layer/position run, since they aren't position-indexed.
 
 ## Phase checklist
 
@@ -38,6 +42,41 @@ last position run (see Log) since they aren't position-indexed yet.
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-23 — Tokenizer decoding wired in (committed directly, not
+  through this session — documented retroactively 2026-09-25).** Added
+  `tokenizer.hpp`/`tokenizer.cpp`: a `Tokenizer` struct
+  (`max_token_length`, `vocab` as `std::vector<std::string>`,
+  `vocab_scores`), `createTokenizer(filename, vocab_size)` which reads
+  `tokenizer.bin` (header `max_token_length`, then per-entry
+  `float score` + `int length` + `length` raw bytes — same layout
+  `run.c`'s `build_tokenizer` reads), and `decodeToken(token_id, t)`.
+  `main.cpp`'s generation loop now prints `decodeToken(...)` instead of
+  the raw integer token ID, and the loop bound changed from a hardcoded
+  `10` to `config.seq_len`. Running it produces a full, coherent
+  TinyStories-style story.
+
+  **Found while documenting this commit: a real heap-buffer-overflow in
+  `createTokenizer()`.** Each vocab entry's bytes are read into
+  `char* tok = new char[tokenLen]` — exactly `tokenLen` bytes, no room
+  for a null terminator — and then `vocab[i] = std::string(tok)` is
+  constructed via the `const char*` overload, which scans forward from
+  `tok` until it finds a `\0` byte that was never written. Compiling with
+  `g++ -fsanitize=address` and running confirms it: AddressSanitizer
+  aborts immediately on the very first vocab entry with
+  `heap-buffer-overflow ... 0 bytes after 5-byte region`, inside the
+  `std::string` constructor called from `tokenizer.cpp:49`. `run.c`'s
+  `build_tokenizer` avoids exactly this by allocating `len + 1` bytes and
+  explicitly writing `t->vocab[i][len] = '\0'` — the from-scratch version
+  is missing that. Separately, `tok` is also never `delete[]`'d — a
+  4-byte-to-`max_token_length`-byte leak per vocab entry (32,000 entries
+  for the full Llama tokenizer). The plain (non-ASan) build happens to
+  print a coherent, readable story anyway — that's not evidence of
+  correctness, it's undefined behavior that hasn't been unlucky yet
+  (whatever byte happens to follow each small heap allocation on this
+  allocator/build currently happens to be zero often enough to look
+  right). Not fixed here per this project's rule that engine code bugs
+  get flagged, not silently corrected.
 
 - **2026-09-23 — Phase 3: real generation loop, validated against
   PyTorch.** Moved the classifier `matmul` + argmax out of `forward()`
@@ -402,3 +441,11 @@ last position run (see Log) since they aren't position-indexed yet.
 - `sample.py` uses a fixed seed (1337). Increasing `max_new_tokens`
   continues the *same* story rather than generating a new one — don't
   mistake that for the model repeating itself.
+- A C++ program producing plausible, readable output is **not** proof
+  it's memory-safe — `createTokenizer()`'s heap-buffer-overflow (see Log,
+  2026-09-23) ran and printed a coherent story despite reading past the
+  end of a heap allocation on every single call. Undefined behavior can
+  look completely correct for a long time before an allocator/build/OS
+  change makes it crash. Run new engine code through
+  `g++ -fsanitize=address` at least once, don't rely on "it looks right
+  when I run it."
