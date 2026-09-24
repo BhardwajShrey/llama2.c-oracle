@@ -4,17 +4,17 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 
 ## Status
 
-Phase 3 (forward pass) is functionally complete, and generation now
-prints decoded text instead of raw token IDs — `tokenizer.hpp`/
-`tokenizer.cpp` read `tokenizer.bin` and decode each predicted token,
-and the loop runs for the full `config.seq_len` instead of a hardcoded
-10 steps. **However, a real heap-buffer-overflow was found in
-`createTokenizer()` while documenting this** (see Log, 2026-09-25) —
-today's coherent-looking story output is not proof of correctness, it's
-undefined behavior that hasn't misbehaved yet. GQA assumptions
-(`kv_dim` vs `dim`) are still open per the TODOs in `main.cpp`; the
-per-layer `mine/*.bin` dumps are still only valid for the last
-layer/position run, since they aren't position-indexed.
+Generation now produces clean, correctly-terminated story text: raw-byte
+tokens (`<0x0A>` etc.) decode to their actual byte via a `byte_pieces`
+table, and the loop stops on BOS/EOS instead of running to
+`config.seq_len` and repeating. **The heap-buffer-overflow in
+`createTokenizer()` (found 2026-09-25) is still present and unfixed** —
+confirmed again via AddressSanitizer after this commit; the new
+byte-piece/early-stop work doesn't touch the buggy `std::string(tok)`
+construction. GQA assumptions (`kv_dim` vs `dim`) are still open per the
+TODOs in `main.cpp`; the per-layer `mine/*.bin` dumps are still only
+valid for the last layer/position run, since they aren't
+position-indexed.
 
 ## Phase checklist
 
@@ -42,6 +42,26 @@ layer/position run, since they aren't position-indexed.
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-25 — Raw-byte token decoding + BOS/EOS early stop.** Added
+  `byte_pieces` to `Tokenizer` (a 256-entry table of single-byte strings,
+  built the same way as `run.c`'s `build_tokenizer`) and updated
+  `decodeToken` to detect the `<0xXX>` raw-byte token format via
+  `sscanf(tok, "<0x%02hhX>", &byte_val)` and substitute the actual byte
+  instead of printing the literal `<0x0A>`-style string — matches
+  `run.c`'s `decode()` almost exactly (missing only its BOS-leading-space
+  strip, a minor fidelity gap, not a bug). `main.cpp`'s generation loop
+  now breaks on `token_id == 1 || token_id == 2` (BOS/EOS) instead of
+  always running to `config.seq_len` — slightly more permissive than
+  `run.c`'s `generate()` mode, which only breaks on BOS (token 2/EOS
+  handling there is `chat()`-mode-only), but a reasonable and safe
+  deviation. Output is now clean, correctly-formatted, and
+  correctly-terminated story text. **Re-verified via AddressSanitizer
+  that the 2026-09-25 `createTokenizer()` heap-buffer-overflow is still
+  present** — this commit doesn't touch the buggy `std::string(tok)`
+  line, so it's unaffected either way. Also note: `byte_pieces` itself
+  (`new unsigned char[512]`) is heap-allocated and never `delete[]`'d —
+  a third leak alongside the per-vocab-entry `tok` leak already logged.
 
 - **2026-09-23 — Tokenizer decoding wired in (committed directly, not
   through this session — documented retroactively 2026-09-25).** Added

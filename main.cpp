@@ -503,6 +503,10 @@ int main() {
         matmul(s.logits.data(), s.x.data(), w.output, config.dim, config.vocab_size);
         token_id = std::max_element(s.logits.begin(), s.logits.end()) - s.logits.begin();
         // std::cout << "Decoding tok id: " << token_id << " at pos: " << pos << "\n";
+        if (token_id == 1 || token_id == 2) {
+            break;
+        }
+
         std::cout << decodeToken(token_id, t);
     }
 

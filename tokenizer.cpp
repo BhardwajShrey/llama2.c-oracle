@@ -12,6 +12,13 @@
 // Each token entry is of format {token_score, length in bytes, actual bytes of token}
 
 Tokenizer createTokenizer(const char* filename, int vocab_size) {
+    unsigned char* byte_pieces = new unsigned char[512]; // stores all single-byte strings
+
+    for (int i = 0; i < 256; i++) {
+        byte_pieces[i * 2] = (unsigned char)i;
+        byte_pieces[i * 2 + 1] = '\0';
+    }
+
     FILE* f = fopen(filename, "rb");
     if (f == nullptr) {
         std::perror(filename);
@@ -57,9 +64,15 @@ Tokenizer createTokenizer(const char* filename, int vocab_size) {
         .max_token_length = maxTokenLen,
         .vocab            = vocab,
         .vocab_scores     = scores,
+        .byte_pieces      = byte_pieces,
     };
 }
 
-const char* decodeToken(int token_id, const Tokenizer& t) {
-    return t.vocab[token_id].c_str();
+char* decodeToken(int token_id, const Tokenizer& t) {
+    char* tok = const_cast<char*>(t.vocab[token_id].data());
+    unsigned char byte_val;
+    if (sscanf(tok, "<0x%02hhX>", &byte_val) == 1) {
+        tok = (char*)t.byte_pieces + byte_val * 2;
+    }
+    return tok;
 }
