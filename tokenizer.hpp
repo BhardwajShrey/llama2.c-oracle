@@ -11,7 +11,7 @@ struct Tokenizer {
     unsigned char*           byte_pieces; // stores all single-byte strings
 };
 
-char* decodeToken(int token_id, const Tokenizer& t);
+char* decodeToken(int token_id, int prev, const Tokenizer& t);
 
 Tokenizer createTokenizer(const char* filename, int vocab_size);
 

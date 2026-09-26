@@ -501,13 +501,14 @@ int main() {
 
         // argmax of this next matmul output will be the next token being predicted
         matmul(s.logits.data(), s.x.data(), w.output, config.dim, config.vocab_size);
+        int prev = token_id;
         token_id = std::max_element(s.logits.begin(), s.logits.end()) - s.logits.begin();
         // std::cout << "Decoding tok id: " << token_id << " at pos: " << pos << "\n";
         if (token_id == 1 || token_id == 2) {
             break;
         }
 
-        std::cout << decodeToken(token_id, t);
+        std::cout << decodeToken(token_id, prev, t);
     }
 
     std::cout <<"\n\n";

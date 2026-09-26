@@ -6,15 +6,15 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 
 Generation now produces clean, correctly-terminated story text: raw-byte
 tokens (`<0x0A>` etc.) decode to their actual byte via a `byte_pieces`
-table, and the loop stops on BOS/EOS instead of running to
-`config.seq_len` and repeating. **The heap-buffer-overflow in
-`createTokenizer()` (found 2026-09-25) is still present and unfixed** —
-confirmed again via AddressSanitizer after this commit; the new
-byte-piece/early-stop work doesn't touch the buggy `std::string(tok)`
-construction. GQA assumptions (`kv_dim` vs `dim`) are still open per the
-TODOs in `main.cpp`; the per-layer `mine/*.bin` dumps are still only
-valid for the last layer/position run, since they aren't
-position-indexed.
+table, the loop stops on BOS/EOS instead of running to `config.seq_len`
+and repeating, and `decodeToken` now matches `run.c`'s `decode()`
+exactly, including the BOS-leading-space strip. **The heap-buffer-overflow
+in `createTokenizer()` (found 2026-09-25) is still present and
+unfixed** — none of the decoding fidelity work since then touches the
+buggy `std::string(tok)` construction. GQA assumptions (`kv_dim` vs
+`dim`) are still open per the TODOs in `main.cpp`; the per-layer
+`mine/*.bin` dumps are still only valid for the last layer/position run,
+since they aren't position-indexed.
 
 ## Phase checklist
 
@@ -42,6 +42,15 @@ position-indexed.
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-27 — BOS-leading-space strip.** `decodeToken` now takes
+  `prev` (the previous token) and strips a leading space from the
+  decoded piece when `prev == 1` (BOS) — closing the one fidelity gap
+  flagged against `run.c`'s `decode()` two commits ago (`if (prev_token
+  == 1 && piece[0] == ' ') piece++`), now matching it exactly. `main.cpp`
+  captures `prev` before overwriting `token_id` with the newly predicted
+  token. Verified it still builds clean and produces the same
+  correctly-terminated story output as before.
 
 - **2026-09-25 — Raw-byte token decoding + BOS/EOS early stop.** Added
   `byte_pieces` to `Tokenizer` (a 256-entry table of single-byte strings,

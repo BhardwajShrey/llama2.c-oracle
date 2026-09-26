@@ -68,8 +68,11 @@ Tokenizer createTokenizer(const char* filename, int vocab_size) {
     };
 }
 
-char* decodeToken(int token_id, const Tokenizer& t) {
+char* decodeToken(int token_id, int prev, const Tokenizer& t) {
     char* tok = const_cast<char*>(t.vocab[token_id].data());
+    if (prev == 1 && tok[0] == ' ') {
+        tok++;
+    }
     unsigned char byte_val;
     if (sscanf(tok, "<0x%02hhX>", &byte_val) == 1) {
         tok = (char*)t.byte_pieces + byte_val * 2;
