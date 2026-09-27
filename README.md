@@ -39,6 +39,7 @@ Everything else in this repo (`run.c`, `runq.c`, `model.py`, `train.py`, `export
 | --- | --- |
 | [`main.cpp`](main.cpp) | The from-scratch C++ inference engine — the actual deliverable of this project, built up incrementally |
 | [`tokenizer.hpp`](tokenizer.hpp) / [`tokenizer.cpp`](tokenizer.cpp) | Reads `tokenizer.bin` and decodes predicted token IDs back into text for `main.cpp`'s generation loop |
+| [`sampler.hpp`](sampler.hpp) / [`sampler.cpp`](sampler.cpp) | Turns logits into a chosen next token — currently greedy (argmax) only, temperature/top-p sampling in progress |
 | [`CLAUDE.md`](CLAUDE.md) | Rules for how Claude Code should (and shouldn't) work in this repo |
 | [`GLOSSARY.md`](GLOSSARY.md) | Plain-language reference for transformer terminology and weight-matrix naming |
 | [`PROGRESS.md`](PROGRESS.md) | Phase checklist plus a dated running journal of the work |

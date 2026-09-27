@@ -43,6 +43,18 @@ since they aren't position-indexed.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-09-27 — `sampler.hpp`/`sampler.cpp` added, argmax moved behind
+  `sample()`.** New `Sampler` struct (`temperature`, `topp`) and
+  `sample(sm, logits)`, called from `main.cpp`'s generation loop instead
+  of calling `std::max_element` directly. `createSampler()` currently
+  hardcodes `temperature = 0`, and `sample()`'s `temperature == 0` branch
+  is exactly the old `std::max_element` argmax — confirmed the full
+  program's stdout is byte-identical to before this change. The
+  `temperature != 0` branch is a stub (falls through to the same argmax,
+  marked with a TODO) — real temperature/top-p sampling isn't
+  implemented yet, so nothing non-deterministic is reachable through the
+  current hardcoded config.
+
 - **2026-09-27 — Extracted `softmax()`.** Pulled the inline three-pass
   softmax (max, exp/sum, normalize) out of the per-head attention loop
   into a standalone `softmax(float* in, int pos)`, matching `run.c`'s
