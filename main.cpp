@@ -265,6 +265,31 @@ void writeToCache(const float* in, float* cache, int layer, int pos, const Confi
     std::copy(in, in + config.dim, cache + cacheOffset(layer, pos, config));
 }
 
+// softmax algo. output will be written into the input array itself
+void softmax(float* in, int pos) {
+    // softmax over 0..pos
+    // involves four passes over att
+    // first pass
+    float max_att = INT_MIN;
+    for (int i = 0; i <= pos; i++) {
+        if (in[i] >= max_att) {
+            max_att = in[i];
+        }
+    }
+
+    // second pass. third pass sums up all the values. adding it here only
+    float sum_att {0};
+    for (int i = 0; i <= pos; i++) {
+        in[i] = expf(in[i] - max_att);
+        sum_att += in[i];
+    }
+
+    // final pass
+    for (int i = 0; i <= pos; i++) {
+        in[i] /= sum_att;
+    }
+}
+
 float dot(const float* a, const float* b, int len) {
     float dot_product {0};
 
@@ -346,27 +371,7 @@ void forward(RunState& s, const Config& config, const Weights& w, int token_id, 
                 s.att[t] = score;
             }
 
-            // softmax over 0..pos
-            // involves four passes over att
-            // first pass
-            float max_att = INT_MIN;
-            for (int i = 0; i <= pos; i++) {
-                if (s.att[i] >= max_att) {
-                    max_att = s.att[i];
-                }
-            }
-
-            // second pass. third pass sums up all the values. adding it here only
-            float sum_att {0};
-            for (int i = 0; i <= pos; i++) {
-                s.att[i] = expf(s.att[i] - max_att);
-                sum_att += s.att[i];
-            }
-
-            // final pass
-            for (int i = 0; i <= pos; i++) {
-                s.att[i] /= sum_att;
-            }
+            softmax(s.att.data(), pos);
 
             // weighted sum
             // zero the output slice (re-use xb used for rms earlier)

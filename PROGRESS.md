@@ -43,6 +43,14 @@ since they aren't position-indexed.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-09-27 — Extracted `softmax()`.** Pulled the inline three-pass
+  softmax (max, exp/sum, normalize) out of the per-head attention loop
+  into a standalone `softmax(float* in, int pos)`, matching `run.c`'s
+  own separate `softmax()` function instead of leaving it inlined where
+  it was computed. Pure extraction — verified with a whitespace-ignoring
+  diff that only the surrounding wrapper changed, and confirmed the full
+  program's stdout is byte-identical before and after.
+
 - **2026-09-27 — BOS-leading-space strip.** `decodeToken` now takes
   `prev` (the previous token) and strips a leading space from the
   decoded piece when `prev == 1` (BOS) — closing the one fidelity gap
