@@ -4,14 +4,16 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 
 ## Status
 
-Generation now produces clean, correctly-terminated story text: raw-byte
-tokens (`<0x0A>` etc.) decode to their actual byte via a `byte_pieces`
-table, the loop stops on BOS/EOS instead of running to `config.seq_len`
-and repeating, and `decodeToken` now matches `run.c`'s `decode()`
-exactly, including the BOS-leading-space strip. **The heap-buffer-overflow
-in `createTokenizer()` (found 2026-09-25) is still present and
-unfixed** — none of the decoding fidelity work since then touches the
-buggy `std::string(tok)` construction. GQA assumptions (`kv_dim` vs
+Generation produces clean, correctly-terminated story text and now
+supports real temperature + top-p sampling (not just greedy argmax).
+**Two known bugs are open, both unfixed:** the `createTokenizer()`
+heap-buffer-overflow (found 2026-09-25), and a new out-of-bounds write
+in `softmax()` when called from `sample()` with a count instead of an
+inclusive last-index (found 2026-09-29 — see Log). The RNG behind
+top-p sampling (`getRandFloat()`, currently C's `rand()`) is being
+replaced with `<random>`'s `std::mt19937` per external review feedback
+— see Log for the two-commit sequence (current code committed as-is
+first, fix committed and pushed second). GQA assumptions (`kv_dim` vs
 `dim`) are still open per the TODOs in `main.cpp`; the per-layer
 `mine/*.bin` dumps are still only valid for the last layer/position run,
 since they aren't position-indexed.
@@ -42,6 +44,35 @@ since they aren't position-indexed.
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-29 — Top-p (nucleus) sampling implemented; `softmax`/
+  `getRandFloat` extracted to `utils.hpp`/`utils.cpp`.** `sample()` now
+  actually samples when `temperature != 0`: divide logits by
+  `temperature`, `softmax` them into probabilities, sort by probability
+  via `sample_topp()` (mirrors `run.c`'s `sample_topp`), draw
+  `r = getRandFloat() * recSum`, and walk the sorted list until the
+  cumulative sum exceeds `r`. `getRandFloat()` currently wraps C's
+  `rand()`. `softmax` moved out of `main.cpp` into `utils.cpp` since both
+  `main.cpp` (attention) and `sampler.cpp` (temperature scaling) need it
+  now. `Sampler` gained a `probIndex` scratch buffer
+  (`new ProbIndex[vocab_size]`, one more heap allocation never freed —
+  same missing-cleanup pattern as `tokenizer.cpp`'s leaks). Also added
+  several diagnostic `std::cout` lines (sampler/tokenizer/run-state
+  creation) and commented out the earlier byte-accounting
+  expected-vs-actual size printout in `main()`.
+
+  **Found while reviewing: `softmax`'s calling convention changed
+  silently and one caller wasn't updated for it.** The original
+  `softmax(float* in, int pos)` took an inclusive last-valid-index
+  (`main.cpp`'s `forward()` still calls it correctly as
+  `softmax(s.att.data(), pos)`). The version now in `utils.cpp` keeps
+  the exact same `for (i = 0; i <= n; i++)` loop bound, but
+  `sampler.cpp` calls it as `softmax(logits.data(), logits.size())` —
+  passing a **count**, not a last index. With `i <= n` and `n =
+  logits.size()` (`vocab_size`, e.g. 32000), the loop runs one iteration
+  too many and reads/writes `in[vocab_size]`, one past the end of the
+  `logits` vector — an out-of-bounds heap write, not just a read. Not
+  yet fixed; flagged for the next commit.
 
 - **2026-09-27 — `sampler.hpp`/`sampler.cpp` added, argmax moved behind
   `sample()`.** New `Sampler` struct (`temperature`, `topp`) and

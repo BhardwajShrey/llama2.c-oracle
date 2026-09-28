@@ -58,7 +58,7 @@ Tokenizer createTokenizer(const char* filename, int vocab_size) {
 
     fclose(f);
 
-    std::cout << "Read tokenizer.bin successfully.\n\n";
+    std::cout << "Read tokenizer.bin successfully.\n";
 
     return Tokenizer {
         .max_token_length = maxTokenLen,

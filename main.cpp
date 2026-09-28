@@ -9,6 +9,7 @@
 
 #include "sampler.hpp"
 #include "tokenizer.hpp"
+#include "utils.hpp"
 
 const char* filename  = "out/stories15M.bin";
 const char* tokenizer = "tokenizer.bin";
@@ -139,6 +140,8 @@ RunState createRunState(const Config& config) {
         hidden_dim  {config.hidden_dim},
         vocab_size  {config.vocab_size};
 
+    std::cout << "Creating run state.\n";
+
     return RunState {
         .x              = std::vector<float> (dim),                               // x  - dim      - the activation
         .xb             = std::vector<float> (dim),                               // xb - dim      - scratch after norm (RMS)
@@ -264,31 +267,6 @@ int cacheOffset(int l, int pos, const Config& config) {
 
 void writeToCache(const float* in, float* cache, int layer, int pos, const Config& config) {
     std::copy(in, in + config.dim, cache + cacheOffset(layer, pos, config));
-}
-
-// softmax algo. output will be written into the input array itself
-void softmax(float* in, int pos) {
-    // softmax over 0..pos
-    // involves four passes over att
-    // first pass
-    float max_att = INT_MIN;
-    for (int i = 0; i <= pos; i++) {
-        if (in[i] >= max_att) {
-            max_att = in[i];
-        }
-    }
-
-    // second pass. third pass sums up all the values. adding it here only
-    float sum_att {0};
-    for (int i = 0; i <= pos; i++) {
-        in[i] = expf(in[i] - max_att);
-        sum_att += in[i];
-    }
-
-    // final pass
-    for (int i = 0; i <= pos; i++) {
-        in[i] /= sum_att;
-    }
 }
 
 float dot(const float* a, const float* b, int len) {
@@ -476,15 +454,15 @@ int main() {
 
     readConfig(data, config, sharedWeights);
     
-    print_config(config, sharedWeights); 
+    // print_config(config, sharedWeights); 
 
-    long long fileSizeExpected = expected_file_size(config);
-    long long fileSizeActual = st.st_size;
+    // long long fileSizeExpected = expected_file_size(config);
+    // long long fileSizeActual = st.st_size;
 
-    std::cout << "expected: " << fileSizeExpected << "\n";
-    std::cout << "actual:   " << fileSizeActual << "\n";
-    std::cout << "gap:      " << fileSizeActual - fileSizeExpected << " bytes = "
-            << (fileSizeActual - fileSizeExpected) / 4 << " floats\n";
+    // std::cout << "expected: " << fileSizeExpected << "\n";
+    // std::cout << "actual:   " << fileSizeActual << "\n";
+    // std::cout << "gap:      " << fileSizeActual - fileSizeExpected << " bytes = "
+    //         << (fileSizeActual - fileSizeExpected) / 4 << " floats\n";
 
     Weights w {};
 
@@ -494,10 +472,13 @@ int main() {
     // printFirstN("wq", w.wq);
 
     Tokenizer t = createTokenizer("tokenizer.bin", config.vocab_size);
+    std::cout << "Tokenizer created successfully.\n\n";
 
     RunState s = createRunState(config);
+    std::cout << "RunState created successfully.\n\n";
 
-    Sampler sm = createSampler();
+    Sampler sm = createSampler(config.vocab_size);
+    std::cout << "Sampler created successfully.\n\n";
 
     // some sane defaults. For testing
     int token_id {1};
