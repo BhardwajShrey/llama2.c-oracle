@@ -18,7 +18,7 @@ float getRandFloat() {
     return uniformDist(rngEngine);
 }
 
-// softmax algo. output will be written into the input array itself
+// softmax algo. output will be written into the input array itself. up to position n (n inclusive)
 void softmax(float* in, int n) {
     // softmax over 0..n
     // involves four passes over att

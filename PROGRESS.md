@@ -5,17 +5,14 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 ## Status
 
 Generation produces clean, correctly-terminated story text and now
-supports real temperature + top-p sampling (not just greedy argmax).
-**Two known bugs are open, both unfixed:** the `createTokenizer()`
-heap-buffer-overflow (found 2026-09-25), and a new out-of-bounds write
-in `softmax()` when called from `sample()` with a count instead of an
-inclusive last-index (found 2026-09-29 — see Log). The RNG behind
-top-p sampling (`getRandFloat()`, currently C's `rand()`) is being
-replaced with `<random>`'s `std::mt19937` per external review feedback
-— see Log for the two-commit sequence (current code committed as-is
-first, fix committed and pushed second). GQA assumptions (`kv_dim` vs
-`dim`) are still open per the TODOs in `main.cpp`; the per-layer
-`mine/*.bin` dumps are still only valid for the last layer/position run,
+supports real temperature + top-p sampling (not just greedy argmax),
+using a properly-seeded `std::mt19937` RNG (see Log, 2026-09-29) instead
+of `rand()`. The `softmax()`-from-`sample()` out-of-bounds write (found
+2026-09-29) is now fixed too — see Log. **One known bug remains open,
+unfixed:** the `createTokenizer()` heap-buffer-overflow (found
+2026-09-25). GQA assumptions (`kv_dim` vs `dim`) are still open per the
+TODOs in `main.cpp`; the per-layer `mine/*.bin` dumps are still only
+valid for the last layer/position run,
 since they aren't position-indexed.
 
 ## Phase checklist
@@ -44,6 +41,23 @@ since they aren't position-indexed.
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-29 — Fixed the `softmax()`-from-`sample()` out-of-bounds
+  write.** Changed `sample()`'s call from `softmax(logits.data(),
+  logits.size())` to `softmax(logits.data(), logits.size() - 1)`,
+  matching `softmax()`'s existing (and unchanged) inclusive-last-index
+  convention — the same convention `main.cpp`'s call
+  (`softmax(s.att.data(), pos)`) already relied on correctly. Fixed the
+  call site rather than the function, since that keeps one consistent
+  convention across both callers instead of two. Also clarified
+  `softmax()`'s doc comment to state the convention explicitly ("up to
+  position n (n inclusive)") so this doesn't silently break again for a
+  future caller. Verified with an isolated standalone test (`sample()`
+  called directly against a 32,000-element vector under
+  AddressSanitizer, bypassing `createTokenizer()`'s still-open bug
+  entirely) — no heap errors, produces a valid in-range token index.
+  Fixed by the user, not this session, per the project's engine-code
+  rule (I flagged it, confirmed the fix, didn't write it).
 
 - **2026-09-29 — Replaced `rand()`/`RAND_MAX` with `<random>`'s
   `std::mt19937` per external code review feedback.** The feedback

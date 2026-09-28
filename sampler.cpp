@@ -86,7 +86,7 @@ int sample(Sampler& sm, std::vector<float>& logits) {
         logits[i] /= sm.temperature;
     }
 
-    softmax(logits.data(), logits.size());
+    softmax(logits.data(), logits.size() - 1);
     // logits holds probabilities post this
 
     ToppResult res = sample_topp(logits.data(), sm.topp, sm.probIndex, logits.size());
