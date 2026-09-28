@@ -45,6 +45,31 @@ since they aren't position-indexed.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-09-29 — Replaced `rand()`/`RAND_MAX` with `<random>`'s
+  `std::mt19937` per external code review feedback.** The feedback
+  (from a different reviewer, not this session) flagged two issues with
+  the previous `getRandFloat()`: `rand()` has a small period, weak low
+  bits, and implementation-defined quality — not reproducible across
+  platforms the way an explicitly-seeded `std::mt19937` is; and
+  `rand() / RAND_MAX` can return exactly `1.0` (when `rand()` returns
+  `RAND_MAX`), which isn't the half-open `[0, 1)` range sampling
+  actually wants — `sample()`'s topp-cutoff loop had a fallback for
+  exactly this (`cut = topp_size - 1`), but that fallback silently
+  picks the *lowest-probability* token that still qualified for
+  top-p, which is a real, reachable failure mode, not just a
+  theoretical one. Added `seedRng(seed)` and rewrote `getRandFloat()` to
+  draw from a static `std::mt19937` via
+  `std::uniform_real_distribution<float>(0.0f, 1.0f)`, which is
+  standard-mandated to be half-open — the old fallback path becomes
+  genuinely unreachable now rather than an occasional edge case.
+  `sampler.cpp`'s `createSampler()` now calls `seedRng(SEED_RNG)`
+  instead of `srand(SEED_RNG)`. Verified: same output across repeated
+  runs with the same seed, and no new compiler warnings introduced.
+  Committed separately from the top-p implementation itself (see the
+  commit right below this entry) at the user's explicit request, so the
+  "as reviewed" code and "as fixed" code are two distinct, diffable
+  commits.
+
 - **2026-09-29 — Top-p (nucleus) sampling implemented; `softmax`/
   `getRandFloat` extracted to `utils.hpp`/`utils.cpp`.** `sample()` now
   actually samples when `temperature != 0`: divide logits by

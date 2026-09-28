@@ -1,10 +1,21 @@
 #include <iostream>
+#include <random>
 
 #include "utils.hpp"
 
+// mt19937: explicit seed, reproducible across platforms (unlike rand()/RAND_MAX,
+// whose quality and period are implementation-defined). uniform_real_distribution
+// produces values in the half-open range [0, 1), so this never returns exactly 1.0
+// the way rand() / RAND_MAX could when rand() returned RAND_MAX.
+static std::mt19937 rngEngine;
+static std::uniform_real_distribution<float> uniformDist(0.0f, 1.0f);
+
+void seedRng(unsigned int seed) {
+    rngEngine.seed(seed);
+}
+
 float getRandFloat() {
-    float rn = static_cast<float>(rand()) / RAND_MAX;
-    return rn;
+    return uniformDist(rngEngine);
 }
 
 // softmax algo. output will be written into the input array itself

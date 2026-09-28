@@ -3,6 +3,8 @@
 
 void softmax(float* in, int n);
 
+void seedRng(unsigned int seed);
+
 float getRandFloat();
 
 #endif

@@ -32,7 +32,7 @@ Sampler createSampler(const int vocab_size) {
 
     std::cout << "Creating sampler with seed_rng: " << SEED_RNG << " and temperature: " << TEMPERATURE_DEFAULT << "\n\n";
 
-    srand(SEED_RNG);
+    seedRng(SEED_RNG);
 
     return Sampler {
         .temperature    = TEMPERATURE_DEFAULT,
