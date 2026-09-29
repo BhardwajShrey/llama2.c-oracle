@@ -4,7 +4,7 @@
 #include "sampler.hpp"
 #include "utils.hpp"
 
-#define SEED_RNG            1
+#define SEED_RNG            3
 #define TOPP_DEFAULT        0.9
 #define TEMPERATURE_DEFAULT 1.0
 

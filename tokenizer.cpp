@@ -47,13 +47,17 @@ Tokenizer createTokenizer(const char* filename, int vocab_size) {
             exit(EXIT_FAILURE);
         }
 
-        char* tok = new char[tokenLen];
+        char* tok = new char[tokenLen + 1];
         if (fread(tok, sizeof(char), tokenLen, f) != tokenLen) {
             std::cerr << "failed to read token at i: " << i << " inside createTokenizer\n";
             fclose(f);
             exit(EXIT_FAILURE);
         }
+        tok[tokenLen] = '\0';
         vocab[i] = std::string(tok);
+
+        // cleanup is important
+        delete []tok;
     }
 
     fclose(f);

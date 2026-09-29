@@ -6,14 +6,13 @@ Running journal for the llama2.c-from-scratch learning project. Also a record of
 
 Generation produces clean, correctly-terminated story text and now
 supports real temperature + top-p sampling (not just greedy argmax),
-using a properly-seeded `std::mt19937` RNG (see Log, 2026-09-29) instead
-of `rand()`. The `softmax()`-from-`sample()` out-of-bounds write (found
-2026-09-29) is now fixed too — see Log. **One known bug remains open,
-unfixed:** the `createTokenizer()` heap-buffer-overflow (found
-2026-09-25). GQA assumptions (`kv_dim` vs `dim`) are still open per the
-TODOs in `main.cpp`; the per-layer `mine/*.bin` dumps are still only
-valid for the last layer/position run,
-since they aren't position-indexed.
+using a properly-seeded `std::mt19937` RNG instead of `rand()`. Both
+previously-open bugs are now fixed: the `softmax()`-from-`sample()`
+out-of-bounds write (2026-09-29), and the `createTokenizer()`
+heap-buffer-overflow + leak (found 2026-09-25, fixed 2026-09-30) — see
+Log. GQA assumptions (`kv_dim` vs `dim`) are still open per the TODOs in
+`main.cpp`; the per-layer `mine/*.bin` dumps are still only valid for
+the last layer/position run, since they aren't position-indexed.
 
 ## Phase checklist
 
@@ -41,6 +40,20 @@ since they aren't position-indexed.
 ## Log
 
 *Reverse-chronological — newest entry first.*
+
+- **2026-09-30 — Fixed the `createTokenizer()` heap-buffer-overflow
+  (found 2026-09-25).** `tok` now allocates `tokenLen + 1` bytes instead
+  of `tokenLen`, explicitly sets `tok[tokenLen] = '\0'` before
+  constructing the `std::string`, and — new on top of what was flagged —
+  properly `delete[] tok`s afterward, fixing the leak that came bundled
+  with the original bug too. Matches `run.c`'s `build_tokenizer` pattern
+  (`malloc(len + 1)` + explicit terminator) exactly. Verified with the
+  full program (not just the tokenizer in isolation) under
+  `g++ -fsanitize=address`: exits `0`, no heap-buffer-overflow, no leak
+  reported by LeakSanitizer, output unchanged (a clean, coherent,
+  correctly-terminated story). Fixed by the user, per the project's
+  engine-code rule. Also bumped `SEED_RNG` from `1` to `3` in
+  `sampler.cpp` — a different seed, no functional concern.
 
 - **2026-09-29 — Fixed the `softmax()`-from-`sample()` out-of-bounds
   write.** Changed `sample()`'s call from `softmax(logits.data(),
