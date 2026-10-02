@@ -41,6 +41,20 @@ the last layer/position run, since they aren't position-indexed.
 
 *Reverse-chronological — newest entry first.*
 
+- **2026-10-03 — Reverse token lookup (`tokens`), `filename` renamed to
+  `model`.** Added `tokens` (`std::unordered_map<std::string, int>`,
+  string → token ID) to `Tokenizer`, built alongside the existing
+  `vocab` (ID → string) in `createTokenizer` — scaffolding for an
+  `encode()` later (turning a text prompt into tokens), not wired up to
+  anything yet. Renamed `main.cpp`'s `filename` global to `model`, now
+  that there are two file-path globals (`model`, `tokenizer`) and the
+  old name was ambiguous between them; also fixed `createTokenizer`'s
+  call site to use the existing `tokenizer` constant instead of a
+  duplicated `"tokenizer.bin"` literal. Verified the full program under
+  both a normal build and `g++ -fsanitize=address`: exits `0`, no heap
+  errors, no leaks, output unchanged — the recently-fixed tokenizer
+  allocation path isn't disturbed by this addition.
+
 - **2026-09-30 — Fixed the `createTokenizer()` heap-buffer-overflow
   (found 2026-09-25).** `tok` now allocates `tokenLen + 1` bytes instead
   of `tokenLen`, explicitly sets `tok[tokenLen] = '\0'` before

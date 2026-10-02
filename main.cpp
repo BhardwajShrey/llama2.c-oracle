@@ -11,7 +11,7 @@
 #include "tokenizer.hpp"
 #include "utils.hpp"
 
-const char* filename  = "out/stories15M.bin";
+const char* model  = "out/stories15M.bin";
 const char* tokenizer = "tokenizer.bin";
 
 struct Config {
@@ -429,23 +429,23 @@ void forward(RunState& s, const Config& config, const Weights& w, int token_id, 
 }
 
 int main() {
-    int fd = open(filename, O_RDONLY);
+    int fd = open(model, O_RDONLY);
     if (fd == -1) {
-        std::perror(filename);
+        std::perror(model);
         return 1;
     }
 
     struct stat st;
     if (fstat(fd, &st) != 0) {
         close(fd);
-        std::cerr << "Error running fstat on: " << filename << ", with fd: " << fd << "\n";
+        std::cerr << "Error running fstat on: " << model << ", with fd: " << fd << "\n";
         return 1;
     }
 
     void* data = mmap(nullptr, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
     close(fd);
     if (data == MAP_FAILED) {
-        std::cerr << "mmap on filename: " << filename << ", failed.\n";
+        std::cerr << "mmap on model: " << model << ", failed.\n";
         return 1;
     }
 
@@ -471,7 +471,7 @@ int main() {
     // printFirstN("tok_embeddings", w.tok_embeddings);
     // printFirstN("wq", w.wq);
 
-    Tokenizer t = createTokenizer("tokenizer.bin", config.vocab_size);
+    Tokenizer t = createTokenizer(tokenizer, config.vocab_size);
     std::cout << "Tokenizer created successfully.\n\n";
 
     RunState s = createRunState(config);

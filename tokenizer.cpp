@@ -4,9 +4,10 @@
 #include "tokenizer.hpp"
 
 // struct Tokenizer {
-//     int                      max_token_length;
-//     std::vector<std::string> vocab;
-//     std::vector<float>       vocab_scores;
+//     int                          max_token_length;
+//     std::vector<std::string>     vocab;                  // tokenId -> token mapping
+//     std::vector<float>           vocab_scores;
+//     unordered_map<string, int>   tokens;                 // token -> tokenId lookup
 // };
 // 
 // Each token entry is of format {token_score, length in bytes, actual bytes of token}
@@ -30,8 +31,9 @@ Tokenizer createTokenizer(const char* filename, int vocab_size) {
         std::cerr << "failed to read maxTokenLen (max_token_length) inside createTokenizer\n";
     };
 
-    std::vector<std::string> vocab  (vocab_size);
-    std::vector<float>       scores (vocab_size);
+    std::vector<std::string>                vocab  (vocab_size);
+    std::vector<float>                      scores (vocab_size);
+    std::unordered_map<std::string, int>    tokens;
 
     for (int i = 0; i < vocab_size; i++) {
         if (fread(scores.data() + i, sizeof(float), 1, f) != 1) {
@@ -55,6 +57,7 @@ Tokenizer createTokenizer(const char* filename, int vocab_size) {
         }
         tok[tokenLen] = '\0';
         vocab[i] = std::string(tok);
+        tokens[vocab[i]] = i;
 
         // cleanup is important
         delete []tok;
@@ -69,6 +72,7 @@ Tokenizer createTokenizer(const char* filename, int vocab_size) {
         .vocab            = vocab,
         .vocab_scores     = scores,
         .byte_pieces      = byte_pieces,
+        .tokens           = tokens,
     };
 }
 
